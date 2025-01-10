@@ -1,6 +1,9 @@
+# SPDX-License-Identifier: MIT
+
 import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles
+
 
 async def send_uart_byte(dut, byte_value, baud_cycles=2604):
     """Simulate UART byte transmission with a start bit, 8 data bits, and a stop bit."""
@@ -16,12 +19,22 @@ async def send_uart_byte(dut, byte_value, baud_cycles=2604):
     dut.ui_in[0].value = 1
     await ClockCycles(dut.clk, baud_cycles)
 
+
 @cocotb.test()
 async def test_tt_um_waves(dut):
     """Test waveform selection, ADSR phases, and I2S output."""
-    # Initialize clock and reset
+    # Initialize power, clock, and reset
+    dut._log.info("Initializing testbench")
+
+    # Drive power and ground signals
+    dut.VPWR.value = 1  # Power pin high
+    dut.VGND.value = 0  # Ground pin low
+
+    # Initialize clock
     clock = Clock(dut.clk, 10, units="us")
     cocotb.start_soon(clock.start())
+
+    # Reset the DUT
     dut.rst_n.value = 0
     dut.ena.value = 1
     await ClockCycles(dut.clk, 10)
