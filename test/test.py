@@ -23,7 +23,6 @@ async def send_uart_byte(dut, byte_value, baud_cycles=2604):
 @cocotb.test()
 async def test_tt_um_waves(dut):
     """Test waveform selection, ADSR phases, and I2S output."""
-    # Initialize power, clock, and reset
     dut._log.info("Initializing testbench")
 
     # Drive power and ground signals
