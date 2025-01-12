@@ -4,7 +4,6 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles
 
-
 async def send_uart_byte(dut, byte_value, baud_cycles=2604):
     """Simulate UART byte transmission with a start bit, 8 data bits, and a stop bit."""
     dut.ui_in[0].value = 0  # Start bit
@@ -24,10 +23,6 @@ async def send_uart_byte(dut, byte_value, baud_cycles=2604):
 async def test_tt_um_waves(dut):
     """Test waveform selection, ADSR phases, and I2S output."""
     dut._log.info("Initializing testbench")
-
-    # Drive power and ground signals
-    dut.VPWR.value = 1  # Power pin high
-    dut.VGND.value = 0  # Ground pin low
 
     # Initialize clock
     clock = Clock(dut.clk, 10, units="us")
