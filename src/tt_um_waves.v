@@ -1,4 +1,6 @@
 module tt_um_waves (
+    input wire VPWR,
+    input wire VGND,
     input  wire [7:0] ui_in,    // ui_in[0] for UART RX
     output reg [7:0] uo_out,    // Dedicated outputs: uo_out[2:0] = {WS, SD, SCK} for I2S
     input  wire [7:0] uio_in,   // GPIO for encoder inputs
