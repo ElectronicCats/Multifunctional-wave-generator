@@ -1,6 +1,3 @@
-`default_nettype none
-`timescale 1ns / 1ps
-
 module tb ();
 
   initial begin
@@ -19,18 +16,8 @@ module tb ();
   wire [7:0] uio_out;
   wire [7:0] uio_oe;
 
-  // Declare VPWR and VGND for gate-level testing
-`ifdef GL_TEST
-  wire VPWR = 1'b1;  
-  wire VGND = 1'b0;  
-`endif
-
   // Replace tt_um_example with your module name:
   tt_um_waves user_project (
-`ifdef GL_TEST
-      .VPWR(VPWR),
-      .VGND(VGND),
-`endif
       .ui_in  (ui_in),
       .uo_out (uo_out),
       .uio_in (uio_in),
