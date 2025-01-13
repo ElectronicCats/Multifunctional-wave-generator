@@ -19,7 +19,6 @@ module tb ();
   wire [7:0] uio_out;
   wire [7:0] uio_oe;
 
-  // Replace tt_um_example with your module name:
   tt_um_waves user_project (
       .ui_in  (ui_in),
       .uo_out (uo_out),
@@ -34,13 +33,12 @@ module tb ();
   // Clock generation
   always #5 clk = ~clk;
 
-  // Monitor signal values for debugging
+  // Debugging Monitor
   initial begin
     $monitor("Time=%0dns | clk=%b | rst_n=%b | ena=%b | ui_in=%b | uo_out=%b | uio_in=%b | uio_out=%b | uio_oe=%b",
              $time, clk, rst_n, ena, ui_in, uo_out, uio_in, uio_out, uio_oe);
   end
 
-  // Testbench initialization
   initial begin
     // Initialize signals
     clk = 0;
@@ -49,12 +47,10 @@ module tb ();
     ui_in = 8'b0;
     uio_in = 8'b0;
 
-    // Apply reset
     #10 rst_n = 1;
     ena = 1;
 
-    // Extend simulation duration to ensure full testing
-    #5000 $finish;  // Increment simulation time
+    #10000 $finish;  // Extend simulation time
   end
 
 endmodule

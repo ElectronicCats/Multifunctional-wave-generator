@@ -39,6 +39,15 @@ module tt_um_waves (
     reg [7:0] selected_wave;
     reg [31:0] clk_div, clk_div_threshold;
     reg clk_divided;
+  
+      // Initialize signals
+    initial begin
+        uo_out = 8'b0;
+        selected_wave = 8'b0;
+        clk_div = 32'b0;
+        clk_div_threshold = 32'b0;
+        clk_divided = 1'b0;
+    end
 
     uart_receiver uart_rx_inst (
     .clk(clk),
@@ -48,7 +57,6 @@ module tt_um_waves (
     .wave_select(wave_select),
     .white_noise_en(white_noise_en) // Connect white noise enable signal
 );
-
 
     // Clock divider for frequency selection
     always @(posedge clk) begin
@@ -190,17 +198,16 @@ module tt_um_waves (
 );
 
 
-    // Assign I2S output pins to uo_out[2:0] and zero out remaining bits
+    // Assign Outputs
     always @(*) begin
         uo_out[0] = sck;
         uo_out[1] = ws;
         uo_out[2] = sd;
-        uo_out[7:3] = 5'b00000; // Set unused bits to defined state
+        uo_out[7:3] = 5'b0;  // Unused bits
     end
 
-    // Unused output assignments
     assign uio_out = 8'b0;
-    assign uio_oe  = 8'b0;
+    assign uio_oe = 8'b0;
 
 endmodule
 
@@ -227,7 +234,7 @@ module uart_receiver (
     assign start_bit = (rx == 1'b0 && state == IDLE); // Falling edge indicates start bit
     assign stop_bit  = (bit_count == 3'd7 && state == RECEIVING);
 
-    always @(posedge clk) begin
+  always @(posedge clk) begin
         if (!rst_n) begin
             // Reset all registers
             received_byte <= 8'd0;
@@ -238,6 +245,7 @@ module uart_receiver (
             white_noise_en <= 1'b0; // Disable white noise
             state <= IDLE;
         end else begin
+          
             case (state)
                 IDLE: begin
                     if (start_bit) begin
