@@ -18,10 +18,9 @@ module tt_um_waves (
     // I2S signals
     wire sck, ws, sd;
 
-    //white noise
-    wire [7:0] white_noise_out;
-    wire white_noise_en; // Señal de habilitación del ruido blanco
-
+    // White noise
+    reg [7:0] white_noise_out;
+    wire white_noise_en;
 
     // ADSR encoder signals from uio_in
     wire encoder_a_attack = uio_in[0];
@@ -39,39 +38,49 @@ module tt_um_waves (
     reg [7:0] selected_wave;
     reg [31:0] clk_div, clk_div_threshold;
     reg clk_divided;
-  
-      // Initialize signals
+
+    // Wave generator outputs
+    reg [7:0] tri_wave_out, saw_wave_out, sqr_wave_out, sine_wave_out;
+
+    // Initialize signals
     initial begin
         uo_out = 8'b0;
         selected_wave = 8'b0;
         clk_div = 32'b0;
         clk_div_threshold = 32'b0;
         clk_divided = 1'b0;
+        tri_wave_out = 8'b0;
+        saw_wave_out = 8'b0;
+        sqr_wave_out = 8'b0;
+        sine_wave_out = 8'b0;
+        white_noise_out = 8'b0;
     end
 
+    // UART Receiver Instance
     uart_receiver uart_rx_inst (
-    .clk(clk),
-    .rst_n(rst_n),
-    .rx(uart_rx),
-    .freq_select(freq_select),
-    .wave_select(wave_select),
-    .white_noise_en(white_noise_en) // Connect white noise enable signal
-);
+        .clk(clk),
+        .rst_n(rst_n),
+        .rx(uart_rx),
+        .freq_select(freq_select),
+        .wave_select(wave_select),
+        .white_noise_en(white_noise_en)
+    );
 
-    // Clock divider for frequency selection
+    // Clock Divider for Frequency Selection
     always @(posedge clk) begin
-        if (!rst_n) begin
-            clk_div <= 32'd0;
-            clk_divided <= 1'b0;
-        end else begin
-            if (clk_div >= clk_div_threshold) begin
-                clk_div <= 32'd0;
-                clk_divided <= ~clk_divided;
-            end else begin
-                clk_div <= clk_div + 1;
-            end
-        end
+    	if (!rst_n) begin
+        	clk_div <= 32'd0;
+        	clk_divided <= 1'b0;
+    	end else if (clk_div_threshold != 32'd0) begin
+        	if (clk_div >= clk_div_threshold) begin
+            	clk_div <= 32'd0;
+            	clk_divided <= ~clk_divided;
+        	end else begin
+            	clk_div <= clk_div + 1;
+        	end
+    	end
     end
+
 
     // Clock divider threshold selection based on `freq_select`
     always @(*) begin
@@ -164,39 +173,36 @@ module tt_um_waves (
     sine_wave_generator       sine_gen(.clk(clk_divided), .rst_n(rst_n), .wave_out(sine_wave_out), .ena(ena));
     adsr_generator            adsr_gen(.clk(clk_divided), .rst_n(rst_n), .attack(attack), .decay(decay), .sustain(sustain), .rel(rel), .amplitude(adsr_amplitude), .ena(ena));
 
-    // Select the wave
+    // Select the Wave
     always @(*) begin
-        $display("wave_select = %b", wave_select); 
-    	case ({white_noise_en, wave_select})
-        	4'b0000: selected_wave = white_noise_out;       // White noise enabled, ignore wave_select
-        	4'b0001: selected_wave = tri_wave_out;          // Triangle wave
-        	4'b0010: selected_wave = saw_wave_out;          // Sawtooth wave
-        	4'b0011: selected_wave = sqr_wave_out;          // Square wave
-        	4'b0100: selected_wave = sine_wave_out;         // Sine wave
-        	default: selected_wave = 8'd0;                  // Undefined state, default to 0
-    	endcase
-     end
+        case ({white_noise_en, wave_select})
+            4'b0000: selected_wave = white_noise_out;   // White Noise
+            4'b0001: selected_wave = tri_wave_out;      // Triangle Wave
+            4'b0010: selected_wave = saw_wave_out;      // Sawtooth Wave
+            4'b0011: selected_wave = sqr_wave_out;      // Square Wave
+            4'b0100: selected_wave = sine_wave_out;     // Sine Wave
+            default: selected_wave = 8'd0;
+        endcase
+    end
 
-
-
-    // I2S output module for selected_wave modulated by ADSR
+    // I2S Output Module
     i2s_transmitter i2s_out (
         .clk(clk),
         .rst_n(rst_n),
-        .data((selected_wave * adsr_amplitude) >> 8), // Ensure this multiplication doesn't exceed 8 bits
+        .data((selected_wave * adsr_amplitude) >> 8),
         .sck(sck),
         .ws(ws),
         .sd(sd),
         .ena(ena)
     );
 
-    white_noise_generator noise_gen (
-    .clk(clk_divided),
-    .rst_n(rst_n),
-    .noise_out(white_noise_out),
-    .ena(ena)
-);
-
+    // White Noise Generator
+    always @(posedge clk_divided) begin
+        if (!rst_n)
+            white_noise_out <= 8'b0;
+        else
+            white_noise_out <= white_noise_out + 1;  // Example LFSR logic
+    end
 
     // Assign Outputs
     always @(*) begin
@@ -210,6 +216,7 @@ module tt_um_waves (
     assign uio_oe = 8'b0;
 
 endmodule
+
 
 module uart_receiver (
     input wire clk,
