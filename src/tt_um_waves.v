@@ -770,31 +770,31 @@ module triangular_wave_generator (
     reg [7:0] counter;
     reg       direction;
 
-    // Inicialize the registers
+    // Inicialización
     initial begin
         counter   = 8'd0;
         direction = 1'b1;
         wave_out  = 8'd0;
     end
 
-    always @(posedge clk) begin
+    always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             counter   <= 8'd0;
             direction <= 1'b1;
             wave_out  <= 8'd0;
         end else if (ena) begin
-            // Generates the triangular wave
+            // Lógica para generar la onda triangular
             if (direction) begin
                 if (counter < 8'd255) begin
                     counter <= counter + 1;
                 end else begin
-                    direction <= 1'b0; // Changes the direction
+                    direction <= 1'b0; // Cambia de dirección
                 end
             end else begin
                 if (counter > 8'd0) begin
                     counter <= counter - 1;
                 end else begin
-                    direction <= 1'b1; // Changes the direction
+                    direction <= 1'b1; // Cambia de dirección
                 end
             end
             wave_out <= counter;
