@@ -157,8 +157,6 @@ module tt_um_waves (
         endcase
     end
 
-    // Wave generator outputs
-    reg [7:0] tri_wave_out, saw_wave_out, sqr_wave_out, sine_wave_out;
 
     // Instantiate encoders
     encoder #(.WIDTH(8), .INCREMENT(1)) attack_encoder (.clk(clk), .rst_n(rst_n), .a(encoder_a_attack), .b(encoder_b_attack), .value(attack), .ena(ena));
