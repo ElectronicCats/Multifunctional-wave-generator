@@ -760,42 +760,48 @@ module adsr_generator (
     end
 endmodule
 
-
 module triangular_wave_generator (
     input  wire       ena,      // Enable signal
-    input wire clk,                  // Clock
-    input wire rst_n,                // Active-low reset
-    output reg [7:0] wave_out        // 8-bit triangular wave output
+    input  wire       clk,      // Clock
+    input  wire       rst_n,    // Active-low reset
+    output reg [7:0]  wave_out  // 8-bit triangular wave output
 );
 
     reg [7:0] counter;
-    reg direction;
+    reg       direction;
 
-    always @(posedge clk) begin
+    // Inicialize the registers
+    initial begin
+        counter   = 8'd0;
+        direction = 1'b1;
+        wave_out  = 8'd0;
+    end
+
+    always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            counter <= 8'd0;
+            counter   <= 8'd0;
             direction <= 1'b1;
+            wave_out  <= 8'd0;
         end else if (ena) begin
+            // Generates the triangular wave
             if (direction) begin
                 if (counter < 8'd255) begin
                     counter <= counter + 1;
                 end else begin
-                    direction <= 1'b0;
+                    direction <= 1'b0; // Changes the direction
                 end
             end else begin
                 if (counter > 8'd0) begin
                     counter <= counter - 1;
                 end else begin
-                    direction <= 1'b1;
+                    direction <= 1'b1; // Changes the direction
                 end
             end
+            wave_out <= counter;
         end
     end
-
-    always @(posedge clk) begin
-        wave_out <= counter;
-    end
 endmodule
+
 
 
 module encoder #(
