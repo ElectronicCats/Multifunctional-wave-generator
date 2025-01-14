@@ -777,7 +777,7 @@ module triangular_wave_generator (
         wave_out  = 8'd0;
     end
 
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk) begin
         if (!rst_n) begin
             counter   <= 8'd0;
             direction <= 1'b1;
