@@ -35,7 +35,7 @@ async def test_uart_and_wave_selection(dut):
     dut.rst_n.value = 1
     await ClockCycles(dut.clk, 20)  # Wait for reset stabilization
 
-    # Verify reset behavior
+    # Verify reset state
     dut._log.info("Checking reset state")
     assert dut.wave_select.value == 0b000, "Wave select should be 0 after reset"
     assert dut.white_noise_en.value == 0, "White noise enable should be 0 after reset"
