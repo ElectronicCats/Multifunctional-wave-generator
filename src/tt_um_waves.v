@@ -1,4 +1,4 @@
-module tt_um_waves (
+/*module tt_um_waves (
     input  wire [7:0] ui_in,    // ui_in[0] for UART RX
     output reg [7:0] uo_out,    // Dedicated outputs: uo_out[2:0] = {WS, SD, SCK} for I2S
     input  wire [7:0] uio_in,   // GPIO for encoder inputs
@@ -213,7 +213,7 @@ module tt_um_waves (
     assign uio_out = 8'b0;
     assign uio_oe = 8'b0;
 
-endmodule
+endmodule*/
 
 
 module uart_receiver (
@@ -299,7 +299,7 @@ endmodule
 
 
 
-module white_noise_generator (
+/*module white_noise_generator (
     input wire clk,
     input wire rst_n,
     output reg [7:0] noise_out,

@@ -1,64 +1,69 @@
-`default_nettype none
-`timescale 1ns / 1ps
+`timescale 1ns/1ps
 
-/* This testbench just instantiates the module and makes some convenient wires
-   that can be driven / tested by the cocotb test.py.
-*/
-module tb ();
+module tb_uart_receiver();
 
-  // Dump the signals to a VCD file. You can view it with gtkwave or surfer.
-  initial begin
-    $dumpfile("tb.vcd");
-    $dumpvars(0, tb);
-    #1;
-  end
+    reg clk;
+    reg rst_n;
+    reg rx;
+    wire [5:0] freq_select;
+    wire [2:0] wave_select;
+    wire white_noise_en;
 
-  // Wire up the inputs and outputs:
-  reg clk;
-  reg rst_n;
-  reg ena;
-  reg [7:0] ui_in;
-  reg [7:0] uio_in;
-  wire [7:0] uo_out;
-  wire [7:0] uio_out;
-  wire [7:0] uio_oe;
+    // Instantiate the UART Receiver
+    uart_receiver uut (
+        .clk(clk),
+        .rst_n(rst_n),
+        .rx(rx),
+        .freq_select(freq_select),
+        .wave_select(wave_select),
+        .white_noise_en(white_noise_en)
+    );
 
-  // Clock generation
-  always #5 clk = ~clk;  // 10ns clock period
+    // Clock generation
+    always #5 clk = ~clk; // 100MHz clock (10ns period)
 
-  // Replace `tt_um_example` with your actual module name:
-  tt_um_waves user_project (
-      .ui_in  (ui_in),
-      .uo_out (uo_out),
-      .uio_in (uio_in),
-      .uio_out(uio_out),
-      .uio_oe (uio_oe),
-      .ena    (ena),
-      .clk    (clk),
-      .rst_n  (rst_n)
-  );
+    initial begin
+        // Initialize signals
+        clk = 0;
+        rst_n = 0;
+        rx = 1;  // Idle state of UART line is high
 
-  // Testbench initialization
-  initial begin
-    // Initialize signals
-    clk = 0;
-    rst_n = 0;
-    ena = 0;
-    ui_in = 8'b0;
-    uio_in = 8'b0;
+        // Reset the module
+        #20 rst_n = 1;
 
-    // Apply reset
-    #10 rst_n = 1;
-    ena = 1;
+        // Send 'T' (0x54 in ASCII) to select Triangle Wave
+        send_uart_byte(8'h54);
 
-    // Simulation duration
-  #100000 $finish;
-  end
+        // Wait for UART processing
+        #100000;
 
-  // Debugging: Monitor signals during simulation
-  always @(posedge clk) begin
-    $display("Time=%0dns | clk=%b | rst_n=%b | ena=%b | ui_in=%b | uo_out=%b | uio_in=%b | uio_out=%b | uio_oe=%b",
-             $time, clk, rst_n, ena, ui_in, uo_out, uio_in, uio_out, uio_oe);
-  end
+        // Send 'S' (0x53 in ASCII) to select Sawtooth Wave
+        send_uart_byte(8'h53);
 
+        // Wait for UART processing
+        #100000;
+
+        // End simulation
+        #1000 $finish;
+    end
+
+    // Task to simulate UART byte transmission
+    task send_uart_byte(input [7:0] byte);
+        integer i;
+        begin
+            // Start bit
+            rx = 0;
+            #8680; // One UART bit time (for 115200 baud rate at 100MHz)
+
+            // Send data bits (LSB first)
+            for (i = 0; i < 8; i = i + 1) begin
+                rx = byte[i];
+                #8680;
+            end
+
+            // Stop bit
+            rx = 1;
+            #8680;
+        end
+    endtask
 endmodule
