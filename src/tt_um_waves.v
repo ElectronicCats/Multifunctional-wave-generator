@@ -171,17 +171,22 @@ module tt_um_waves (
     sine_wave_generator       sine_gen(.clk(clk_divided), .rst_n(rst_n), .wave_out(sine_wave_out), .ena(ena));
     adsr_generator            adsr_gen(.clk(clk_divided), .rst_n(rst_n), .attack(attack), .decay(decay), .sustain(sustain), .rel(rel), .amplitude(adsr_amplitude), .ena(ena));
 
+
     // Select the Wave
     always @(*) begin
-        case ({white_noise_en, wave_select})
-            4'b0000: selected_wave = white_noise_out;   // White Noise
-            4'b0001: selected_wave = tri_wave_out;      // Triangle Wave
-            4'b0010: selected_wave = saw_wave_out;      // Sawtooth Wave
-            4'b0011: selected_wave = sqr_wave_out;      // Square Wave
-            4'b0100: selected_wave = sine_wave_out;     // Sine Wave
-            default: selected_wave = 8'd0;
-        endcase
+        if (white_noise_en) begin
+            selected_wave = white_noise_out; // Prioritize white noise
+        end else begin
+            case (wave_select)
+                3'b000: selected_wave = tri_wave_out;
+                3'b001: selected_wave = saw_wave_out; // Sawtooth Wave
+                3'b010: selected_wave = sqr_wave_out; // Square Wave
+                3'b011: selected_wave = sine_wave_out; // Sine Wave
+                default: selected_wave = 8'd0; //Triangle Wave
+            endcase
+        end
     end
+
 
     // I2S Output Module
     i2s_transmitter i2s_out (
@@ -220,18 +225,19 @@ module uart_receiver (
     input wire clk,
     input wire rst_n,
     input wire rx,
-    output reg [5:0] freq_select, // Frequency selection
-    output reg [2:0] wave_select, // Wave type selection
-    output reg white_noise_en     // White noise enable
+    output reg [5:0] freq_select,  // Frequency selection
+    output reg [2:0] wave_select,  // Wave type selection
+    output reg white_noise_en      // White noise enable
 );
 
-    reg [7:0] received_byte;  // Received byte buffer
-    reg [2:0] bit_count;      // Bit count (0-7 for 8 bits)
-    reg receiving;            // UART receiving flag
-    reg [1:0] state;          // State machine: 0 = idle, 1 = receiving, 2 = processing
-    wire start_bit;           // Detect start bit
-    wire stop_bit;            // Detect stop bit
+    reg [7:0] received_byte;   // Received byte buffer
+    reg [2:0] bit_count;       // Bit count (0-7 for 8 bits)
+    reg receiving;             // UART receiving flag
+    reg [1:0] state;           // State machine: 0 = idle, 1 = receiving, 2 = processing
+    wire start_bit;            // Detect start bit
+    wire stop_bit;             // Detect stop bit
 
+    // State machine states
     localparam IDLE       = 2'b00;
     localparam RECEIVING  = 2'b01;
     localparam PROCESSING = 2'b10;
@@ -239,7 +245,7 @@ module uart_receiver (
     assign start_bit = (rx == 1'b0 && state == IDLE); // Falling edge indicates start bit
     assign stop_bit  = (bit_count == 3'd7 && state == RECEIVING);
 
-  always @(posedge clk) begin
+    always @(posedge clk) begin
         if (!rst_n) begin
             // Reset all registers
             received_byte <= 8'd0;
@@ -250,7 +256,6 @@ module uart_receiver (
             white_noise_en <= 1'b0; // Disable white noise
             state <= IDLE;
         end else begin
-          
             case (state)
                 IDLE: begin
                     if (start_bit) begin
@@ -275,7 +280,6 @@ module uart_receiver (
                     case (received_byte)
                         8'h4E: begin
                             white_noise_en <= 1'b1; // 'N' - Enable white noise
-                            wave_select <= 3'b000;  // Default wave selection ignored
                         end
                         8'h46: begin
                             white_noise_en <= 1'b0; // 'F' - Disable white noise
@@ -285,7 +289,9 @@ module uart_receiver (
                         8'h51: wave_select <= 3'b010; // 'Q' - Square wave
                         8'h57: wave_select <= 3'b011; // 'W' - Sine wave
                         default: begin
-                            freq_select <= received_byte[5:0]; // Use the lower 6 bits for frequency
+                            white_noise_en <= 1'b0;       // Disable white noise by default
+                            wave_select <= 3'b000;        // Default wave selection
+                            freq_select <= received_byte[5:0]; // Frequency selection (lower 6 bits)
                         end
                     endcase
                     state <= IDLE;
@@ -296,6 +302,7 @@ module uart_receiver (
         end
     end
 endmodule
+
 
 
 

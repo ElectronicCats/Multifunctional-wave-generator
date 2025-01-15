@@ -1,12 +1,9 @@
 `default_nettype none
 `timescale 1ns / 1ps
 
-/* This testbench just instantiates the module and makes some convenient wires
-   that can be driven / tested by the cocotb test.py.
-*/
 module tb ();
 
-  // Dump the signals to a VCD file. You can view it with gtkwave or surfer.
+  // Dump the signals to a VCD file. You can view it with GTKWave or surfer.
   initial begin
     $dumpfile("tb.vcd");
     $dumpvars(0, tb);
@@ -23,20 +20,30 @@ module tb ();
   wire [7:0] uio_out;
   wire [7:0] uio_oe;
 
-  // Clock generation
-  always #5 clk = ~clk;  // 10ns clock period
+  // Internal UART receiver signals
+  wire white_noise_en;
+  wire [2:0] wave_select;
+  wire [5:0] freq_select;
 
-  // Replace `tt_um_example` with your actual module name:
+  // Instantiate the DUT (Device Under Test)
   tt_um_waves user_project (
-      .ui_in  (ui_in),
-      .uo_out (uo_out),
-      .uio_in (uio_in),
-      .uio_out(uio_out),
-      .uio_oe (uio_oe),
-      .ena    (ena),
-      .clk    (clk),
-      .rst_n  (rst_n)
+    .ui_in  (ui_in),
+    .uo_out (uo_out),
+    .uio_in (uio_in),
+    .uio_out(uio_out),
+    .uio_oe (uio_oe),
+    .ena    (ena),
+    .clk    (clk),
+    .rst_n  (rst_n)
   );
+
+  // Connect internal signals for monitoring
+  assign white_noise_en = user_project.uart_rx_inst.white_noise_en;
+  assign wave_select = user_project.uart_rx_inst.wave_select;
+  assign freq_select = user_project.uart_rx_inst.freq_select;
+
+  // Clock generation
+  always #5 clk = ~clk;  // 10-unit clock period
 
   // Testbench initialization
   initial begin
@@ -52,13 +59,7 @@ module tb ();
     ena = 1;
 
     // Simulation duration
-  #100000 $finish;
-  end
-
-  // Debugging: Monitor signals during simulation
-  always @(posedge clk) begin
-    $display("Time=%0dns | clk=%b | rst_n=%b | ena=%b | ui_in=%b | uo_out=%b | uio_in=%b | uio_out=%b | uio_oe=%b",
-             $time, clk, rst_n, ena, ui_in, uo_out, uio_in, uio_out, uio_oe);
+    #1000 $finish;
   end
 
 endmodule
