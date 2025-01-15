@@ -68,18 +68,19 @@ module tt_um_waves (
 
     // Clock Divider for Frequency Selection
     always @(posedge clk) begin
-    	if (!rst_n) begin
-        	clk_div <= 32'd0;
-        	clk_divided <= 1'b0;
-    	end else if (clk_div_threshold != 32'd0) begin
-        	if (clk_div >= clk_div_threshold) begin
-            	clk_div <= 32'd0;
-            	clk_divided <= ~clk_divided;
-        	end else begin
-            	clk_div <= clk_div + 1;
-        	end
-    	end
+        if (!rst_n) begin
+            clk_div <= 32'd0;
+            clk_divided <= 1'b0;
+        end else if (clk_div_threshold != 32'd0) begin
+            if (clk_div >= clk_div_threshold) begin
+                clk_div <= 32'd0;
+                clk_divided <= ~clk_divided;
+            end else begin
+                clk_div <= clk_div + 1;
+            end
+        end
     end
+
 
 
     // Clock divider threshold selection based on `freq_select`
@@ -155,6 +156,7 @@ module tt_um_waves (
             6'b111011: clk_div_threshold = 32'd6358;     // B6 (1975.53 Hz)
             default: clk_div_threshold = 32'd284091; // Default to A4 (440 Hz)
         endcase
+        $display("Freq Select: %b, Clock Divider Threshold: %d", freq_select, clk_div_threshold);
     end
 
 
@@ -174,18 +176,16 @@ module tt_um_waves (
 
     // Select the Wave
     always @(*) begin
-        if (white_noise_en) begin
-            selected_wave = white_noise_out; // Prioritize white noise
-        end else begin
-            case (wave_select)
-                3'b000: selected_wave = tri_wave_out;
-                3'b001: selected_wave = saw_wave_out; // Sawtooth Wave
-                3'b010: selected_wave = sqr_wave_out; // Square Wave
-                3'b011: selected_wave = sine_wave_out; // Sine Wave
-                default: selected_wave = 8'd0; //Triangle Wave
-            endcase
-        end
+        case ({white_noise_en, wave_select})
+            4'b1000: selected_wave = white_noise_out;   // White noise
+            4'b0001: selected_wave = tri_wave_out;      // Triangle wave
+            4'b0010: selected_wave = saw_wave_out;      // Sawtooth wave
+            4'b0011: selected_wave = sqr_wave_out;      // Square wave
+            4'b0100: selected_wave = sine_wave_out;     // Sine wave
+            default: selected_wave = 8'd0;              // Default to zero
+        endcase
     end
+
 
 
     // I2S Output Module
