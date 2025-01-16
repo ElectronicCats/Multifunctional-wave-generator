@@ -12,7 +12,7 @@ module tt_um_waves (
     // UART signal
     wire uart_rx = ui_in[0];
     wire [5:0] freq_select;
-    wire [2:0] wave_select;
+    wire [2:0] wave_select; //issues with this signal
     wire unused_ui_in = |ui_in[7:1];
 
     // I2S signals
@@ -20,7 +20,7 @@ module tt_um_waves (
 
     // White noise
     reg [7:0] white_noise_out;
-    wire white_noise_en;
+    wire white_noise_en;     //issue with this signal 
 
     // ADSR encoder signals from uio_in
     wire encoder_a_attack = uio_in[0];

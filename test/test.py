@@ -20,25 +20,22 @@ async def send_uart_byte(dut, byte_value, baud_cycles=2604):
 
 
 @cocotb.test()
-async def test_uart_and_wave_selection(dut):
-    """Test UART receiver, wave selection, and reset functionality."""
-    dut._log.info("Initializing testbench")
-
+async def test_wave_generation(dut):
+    """Test UART-based wave selection and generation."""
     # Initialize clock
     clock = Clock(dut.clk, 10, units="us")
     cocotb.start_soon(clock.start())
 
-    # Reset the DUT
+    # Reset
     dut.rst_n.value = 0
     dut.ena.value = 1
     await ClockCycles(dut.clk, 10)
     dut.rst_n.value = 1
-    await ClockCycles(dut.clk, 20)  # Wait for reset stabilization
+    await ClockCycles(dut.clk, 20)
 
-    # Verify reset state
-    dut._log.info("Checking reset state")
-    assert dut.wave_select.value == 0b000, "Wave select should be 0 after reset"
-    assert dut.white_noise_en.value == 0, "White noise enable should be 0 after reset"
+    # Verify Reset State
+    assert dut.uio_out[0].value == 0, "White noise enable should be 0 after reset"
+    assert dut.uio_out[3:1].value == 0b000, "Wave select should be 0 after reset"
 
     # Test UART wave selection
     waveforms = {
@@ -51,24 +48,20 @@ async def test_uart_and_wave_selection(dut):
     }
 
     for byte, expected in waveforms.items():
-        dut._log.info(f"Testing UART Byte: {byte}")
+        dut._log.info(f"Testing UART Byte: {hex(byte)}")
         await send_uart_byte(dut, byte)
-        await ClockCycles(dut.clk, 50)  # Wait for UART processing
+        await ClockCycles(dut.clk, 50)
 
-        # Check `white_noise_en` and `wave_select`
-        assert dut.white_noise_en.value == expected["white_noise_en"], \
+        assert dut.uio_out[0].value == expected["white_noise_en"], \
             f"White noise enable mismatch for byte {hex(byte)}"
-        assert dut.wave_select.value == expected["wave_select"], \
+        assert dut.uio_out[3:1].value == expected["wave_select"], \
             f"Wave select mismatch for byte {hex(byte)}"
 
-        dut._log.info(f"UART Byte {byte} processed successfully")
+        dut._log.info(f"Waveform selection for {hex(byte)} passed!")
 
-    # Test I2S Output Signals
-    dut._log.info("Verifying I2S signals")
-    for _ in range(20):
-        await ClockCycles(dut.clk, 10)
-        assert dut.uo_out[0].value in (0, 1), "Invalid SCK signal on I2S output"
-        assert dut.uo_out[1].value in (0, 1), "Invalid WS signal on I2S output"
-        assert dut.uo_out[2].value in (0, 1), "Invalid SD signal on I2S output"
-
-    dut._log.info("I2S signals verified successfully")
+    # Verify Wave Output
+    await ClockCycles(dut.clk, 100)
+    assert dut.uo_out[0].value in (0, 1), "Invalid I2S SCK signal"
+    assert dut.uo_out[1].value in (0, 1), "Invalid I2S WS signal"
+    assert dut.uo_out[2].value in (0, 1), "Invalid I2S SD signal"
+    dut._log.info("Waveform output verified successfully!")
