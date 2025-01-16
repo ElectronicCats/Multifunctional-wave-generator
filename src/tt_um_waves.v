@@ -290,7 +290,7 @@ module uart_receiver (
                         8'h57: wave_select <= 3'b011; // 'W' - Sine wave
                         default: begin
                             white_noise_en <= 1'b0;       // Disable white noise by default
-                            wave_select <= 3'b000;        // Default wave selection
+                            wave_select <= 3'b001;        // Default wave selection
                             freq_select <= received_byte[5:0]; // Frequency selection (lower 6 bits)
                         end
                     endcase
