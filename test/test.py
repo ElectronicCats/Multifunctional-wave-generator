@@ -3,6 +3,7 @@ from cocotb.clock import Clock
 from cocotb.triggers import Timer
 
 async def send_uart_byte(dut, byte):
+    """Send a single UART byte."""
     # Start bit
     dut.rx.value = 0
     await Timer(104167, units="ns")
@@ -16,6 +17,7 @@ async def send_uart_byte(dut, byte):
 
 @cocotb.test()
 async def test_uart_wave_selection(dut):
+    """Test UART commands for wave selection."""
     # Clock generation
     clock = Clock(dut.clk, 40, units="ns")  # 25 MHz
     cocotb.start_soon(clock.start())
@@ -33,3 +35,11 @@ async def test_uart_wave_selection(dut):
     await send_uart_byte(dut, 0x53)  # 'S' - Sawtooth wave
     await Timer(100, units="ns")
     assert dut.wave_select.value == 0b001, "Sawtooth wave selection failed"
+
+    await send_uart_byte(dut, 0x4E)  # 'N' - Enable white noise
+    await Timer(100, units="ns")
+    assert dut.white_noise_en.value == 1, "White noise enable failed"
+
+    await send_uart_byte(dut, 0x46)  # 'F' - Disable white noise
+    await Timer(100, units="ns")
+    assert dut.white_noise_en.value == 0, "White noise disable failed"

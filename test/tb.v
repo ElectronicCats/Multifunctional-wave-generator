@@ -4,7 +4,6 @@ module tb;
     reg clk;
     reg rst_n;
     reg rx;
-    wire [7:0] uo_out;
     wire [2:0] wave_select;
     wire white_noise_en;
 
@@ -13,7 +12,6 @@ module tb;
         .clk(clk),
         .rst_n(rst_n),
         .rx(rx),
-        .uo_out(uo_out),
         .wave_select(wave_select),
         .white_noise_en(white_noise_en)
     );
@@ -37,7 +35,7 @@ module tb;
         integer i;
         begin
             rx = 1; // Idle state
-            #(104167); // One bit time at 9600 baud
+            #(104167); // Wait for idle time
             rx = 0; // Start bit
             #(104167);
             for (i = 0; i < 8; i = i + 1) begin
@@ -55,8 +53,10 @@ module tb;
         #200;    // Wait for reset
         send_uart_byte(8'h54);  // 'T' - Triangle wave
         #200;
+        $display("Wave Select: %b, White Noise Enable: %b", wave_select, white_noise_en);
         send_uart_byte(8'h53);  // 'S' - Sawtooth wave
         #200;
+        $display("Wave Select: %b, White Noise Enable: %b", wave_select, white_noise_en);
         $finish;
     end
 endmodule
