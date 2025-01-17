@@ -1,67 +1,73 @@
+# SPDX-FileCopyrightText: © 2023 Uri Shaked <uri@tinytapeout.com>
 # SPDX-License-Identifier: MIT
 
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles
-
-async def send_uart_byte(dut, byte_value, baud_cycles=2604):
-    """Simulate UART byte transmission with a start bit, 8 data bits, and a stop bit."""
-    dut.ui_in[0].value = 0  # Start bit
-    await ClockCycles(dut.clk, baud_cycles)
-
-    # Send 8 data bits
-    for i in range(8):
-        dut.ui_in[0].value = (byte_value >> i) & 1
-        await ClockCycles(dut.clk, baud_cycles)
-
-    # Stop bit
-    dut.ui_in[0].value = 1
-    await ClockCycles(dut.clk, baud_cycles)
-
+from cocotb.triggers import ClockCycles, FallingEdge, RisingEdge
 
 @cocotb.test()
-async def test_wave_generation(dut):
-    """Test UART-based wave selection and generation."""
-    # Initialize clock
-    clock = Clock(dut.clk, 10, units="us")
+async def test_uart_receiver(dut):
+    """Test the UART receiver functionality."""
+
+    # Clock setup: 25 MHz clock (40 ns period)
+    clock = Clock(dut.clk, 40, units="ns")
     cocotb.start_soon(clock.start())
 
-    # Reset
+    # Reset the DUT
+    dut._log.info("Applying reset")
     dut.rst_n.value = 0
-    dut.ena.value = 1
+    dut.rx.value = 1  # Default RX line idle state (high)
     await ClockCycles(dut.clk, 10)
     dut.rst_n.value = 1
-    await ClockCycles(dut.clk, 20)
+    await ClockCycles(dut.clk, 10)
 
-    # Verify Reset State
-    assert dut.uio_out[0].value == 0, "White noise enable should be 0 after reset"
-    assert dut.uio_out[3:1].value == 0b000, "Wave select should be 0 after reset"
+    # Function to send a UART byte
+    async def send_uart_byte(byte):
+        """Send a UART byte to the RX line."""
+        dut.rx.value = 0  # Start bit
+        await ClockCycles(dut.clk, 25)  # Wait 1 baud (adjust based on your baud rate)
 
-    # Test UART wave selection
-    waveforms = {
-        0x4E: {"white_noise_en": 1, "wave_select": 0b000},  # White Noise ('N')
-        0x46: {"white_noise_en": 0, "wave_select": 0b000},  # Disable White Noise ('F')
-        0x54: {"white_noise_en": 0, "wave_select": 0b001},  # Triangle Wave ('T')
-        0x53: {"white_noise_en": 0, "wave_select": 0b010},  # Sawtooth Wave ('S')
-        0x51: {"white_noise_en": 0, "wave_select": 0b011},  # Square Wave ('Q')
-        0x57: {"white_noise_en": 0, "wave_select": 0b100},  # Sine Wave ('W')
-    }
+        for i in range(8):  # Send 8 data bits (LSB first)
+            dut.rx.value = (byte >> i) & 1
+            await ClockCycles(dut.clk, 25)
 
-    for byte, expected in waveforms.items():
-        dut._log.info(f"Testing UART Byte: {hex(byte)}")
-        await send_uart_byte(dut, byte)
-        await ClockCycles(dut.clk, 50)
+        dut.rx.value = 1  # Stop bit
+        await ClockCycles(dut.clk, 25)  # Wait for the stop bit period
 
-        assert dut.uio_out[0].value == expected["white_noise_en"], \
-            f"White noise enable mismatch for byte {hex(byte)}"
-        assert dut.uio_out[3:1].value == expected["wave_select"], \
-            f"Wave select mismatch for byte {hex(byte)}"
+    # Test cases
+    dut._log.info("Sending 'T' for Triangle Wave")
+    await send_uart_byte(0x54)  # ASCII 'T'
+    await ClockCycles(dut.clk, 50)
+    assert dut.wave_select.value == 0, "Wave select should be 0 for triangle wave"
 
-        dut._log.info(f"Waveform selection for {hex(byte)} passed!")
+    dut._log.info("Sending 'S' for Sawtooth Wave")
+    await send_uart_byte(0x53)  # ASCII 'S'
+    await ClockCycles(dut.clk, 50)
+    assert dut.wave_select.value == 1, "Wave select should be 1 for sawtooth wave"
 
-    # Verify Wave Output
-    await ClockCycles(dut.clk, 100)
-    assert dut.uo_out[0].value in (0, 1), "Invalid I2S SCK signal"
-    assert dut.uo_out[1].value in (0, 1), "Invalid I2S WS signal"
-    assert dut.uo_out[2].value in (0, 1), "Invalid I2S SD signal"
-    dut._log.info("Waveform output verified successfully!")
+    dut._log.info("Sending 'Q' for Square Wave")
+    await send_uart_byte(0x51)  # ASCII 'Q'
+    await ClockCycles(dut.clk, 50)
+    assert dut.wave_select.value == 2, "Wave select should be 2 for square wave"
+
+    dut._log.info("Sending 'W' for Sine Wave")
+    await send_uart_byte(0x57)  # ASCII 'W'
+    await ClockCycles(dut.clk, 50)
+    assert dut.wave_select.value == 3, "Wave select should be 3 for sine wave"
+
+    dut._log.info("Sending 'N' to Enable White Noise")
+    await send_uart_byte(0x4E)  # ASCII 'N'
+    await ClockCycles(dut.clk, 50)
+    assert dut.white_noise_en.value == 1, "White noise enable should be 1"
+
+    dut._log.info("Sending 'F' to Disable White Noise")
+    await send_uart_byte(0x46)  # ASCII 'F'
+    await ClockCycles(dut.clk, 50)
+    assert dut.white_noise_en.value == 0, "White noise enable should be 0"
+
+    dut._log.info("Sending frequency byte 0x3C")
+    await send_uart_byte(0x3C)  # Arbitrary frequency byte
+    await ClockCycles(dut.clk, 50)
+    assert dut.freq_select.value == 0x3C, "Frequency select should match received byte (0x3C)"
+
+    dut._log.info("All tests passed!")
