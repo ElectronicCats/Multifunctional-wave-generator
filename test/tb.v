@@ -51,12 +51,25 @@ module tb;
     initial begin
         rx = 1;  // Idle state
         #200;    // Wait for reset
+        $display("Starting UART Test...");
+
+        // Send UART commands and monitor outputs
         send_uart_byte(8'h54);  // 'T' - Triangle wave
         #200;
-        $display("Wave Select: %b, White Noise Enable: %b", wave_select, white_noise_en);
+        $display("Sent 'T': wave_select = %b, white_noise_en = %b", wave_select, white_noise_en);
+
         send_uart_byte(8'h53);  // 'S' - Sawtooth wave
         #200;
-        $display("Wave Select: %b, White Noise Enable: %b", wave_select, white_noise_en);
+        $display("Sent 'S': wave_select = %b, white_noise_en = %b", wave_select, white_noise_en);
+
+        send_uart_byte(8'h4E);  // 'N' - Enable white noise
+        #200;
+        $display("Sent 'N': wave_select = %b, white_noise_en = %b", wave_select, white_noise_en);
+
+        send_uart_byte(8'h46);  // 'F' - Disable white noise
+        #200;
+        $display("Sent 'F': wave_select = %b, white_noise_en = %b", wave_select, white_noise_en);
+
         $finish;
     end
 endmodule

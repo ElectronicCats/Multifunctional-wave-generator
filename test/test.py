@@ -31,15 +31,19 @@ async def test_uart_wave_selection(dut):
     await send_uart_byte(dut, 0x54)  # 'T' - Triangle wave
     await Timer(100, units="ns")
     assert dut.wave_select.value == 0b000, "Triangle wave selection failed"
+    dut._log.info(f"Triangle wave selected: wave_select = {dut.wave_select.value}")
 
     await send_uart_byte(dut, 0x53)  # 'S' - Sawtooth wave
     await Timer(100, units="ns")
     assert dut.wave_select.value == 0b001, "Sawtooth wave selection failed"
+    dut._log.info(f"Sawtooth wave selected: wave_select = {dut.wave_select.value}")
 
     await send_uart_byte(dut, 0x4E)  # 'N' - Enable white noise
     await Timer(100, units="ns")
     assert dut.white_noise_en.value == 1, "White noise enable failed"
+    dut._log.info(f"White noise enabled: white_noise_en = {dut.white_noise_en.value}")
 
     await send_uart_byte(dut, 0x46)  # 'F' - Disable white noise
     await Timer(100, units="ns")
     assert dut.white_noise_en.value == 0, "White noise disable failed"
+    dut._log.info(f"White noise disabled: white_noise_en = {dut.white_noise_en.value}")
