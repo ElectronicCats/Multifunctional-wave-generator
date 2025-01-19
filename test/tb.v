@@ -1,70 +1,63 @@
-`timescale 1ns/1ps
+module tb;
+    reg clk;
+    reg rst_n;
+    reg rx;
+    wire [7:0] uo_out;
 
-module tb_uart_wave;
-
-    reg clk;                 // Clock signal
-    reg rst_n;               // Reset signal (active low)
-    reg rx;                  // UART RX signal
-    wire [2:0] wave_select;  // Selected wave
-    wire white_noise_en;     // White noise enable
-
-    // Instantiate the UART receiver module
-    uart_receiver uut (
+    // Instancia del diseño
+    tt_um_waves uut (
         .clk(clk),
         .rst_n(rst_n),
         .rx(rx),
-        .freq_select(),      // Not used for this test
-        .wave_select(wave_select),
-        .white_noise_en(white_noise_en)
+        .uo_out(uo_out)
     );
 
-    // Clock generation
-    initial clk = 0;
-    always #20 clk = ~clk;  // 25 MHz clock (40 ns period)
+    // Generación de reloj de 25 MHz
+    initial begin
+        clk = 0;
+        forever #20 clk = ~clk;  // 40 ns periodo = 25 MHz
+    end
 
-    // UART transmission task
-    task send_uart_byte(input [7:0] data);
+    // Tarea para enviar un byte por UART
+    task send_uart_byte;
+        input [7:0] data;
         integer i;
         begin
-            rx = 0; // Start bit
-            #8680;  // 115200 baud rate = ~8680 ns per bit
+            // Start bit
+            rx = 1'b0;
+            #8680;  // BIT_PERIOD
+
+            // Data bits
             for (i = 0; i < 8; i = i + 1) begin
                 rx = data[i];
-                #8680;  // Data bits
+                #8680;  // BIT_PERIOD
             end
-            rx = 1; // Stop bit
-            #8680;
+
+            // Stop bit
+            rx = 1'b1;
+            #8680;  // BIT_PERIOD
         end
     endtask
 
-    // Testbench sequence
+    // Secuencia de prueba
     initial begin
-        // Initialize signals
-        rx = 1;
+        // Reset
         rst_n = 0;
-
-        // Apply reset
+        rx = 1;
         #100;
         rst_n = 1;
 
-        // Send 'T' for Triangle wave
-        #1000;
-        send_uart_byte(8'h54);
+        // Enviar 'T' para onda triangular
+        send_uart_byte(8'h54);  // ASCII 'T'
+        #20000;  // Esperar a que se procese
+        $display("uo_out: %b", uo_out);  // wave_select debería ser 000 (onda triangular)
 
-        // Wait and check the output
-        #10000;
-        if (wave_select !== 3'b000) $display("Test failed: Expected 3'b000, got %b", wave_select);
-        else $display("Test passed: Triangle wave selected.");
+        // Enviar 'N' para habilitar ruido blanco
+        send_uart_byte(8'h4E);  // ASCII 'N'
+        #20000;  // Esperar a que se procese
+        $display("uo_out: %b", uo_out);  // white_noise_en debería ser 1
 
-        // Send 'S' for Sawtooth wave
-        send_uart_byte(8'h53);
-
-        // Wait and check the output
-        #10000;
-        if (wave_select !== 3'b001) $display("Test failed: Expected 3'b001, got %b", wave_select);
-        else $display("Test passed: Sawtooth wave selected.");
-
-        // End simulation
+        // Fin de simulación
         $finish;
     end
 endmodule

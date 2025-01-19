@@ -236,6 +236,10 @@ module tt_um_waves (
   assign uio_out[5] = ena;               // Enable signal
   assign uio_out[6] = tri_wave_out[0];   // Example wave output
 
+  assign uo_out[2:0] = wave_select;         // Map wave_select to uo_out[2:0]
+  assign uo_out[3]   = white_noise_en;      // Map white_noise_en to uo_out[3]
+  assign uo_out[7:4] = freq_select[3:0];    // Map lower 4 bits of freq_select to uo_out[7:4]
+
 
 endmodule
 
