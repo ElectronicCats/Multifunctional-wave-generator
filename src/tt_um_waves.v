@@ -1,3 +1,5 @@
+`define default_netname none
+
 module tt_um_waves (
     input  wire [7:0] ui_in,    // ui_in[0] for UART RX
     output reg [7:0] uo_out,    // Dedicated outputs: uo_out[2:0] = {WS, SD, SCK} for I2S
@@ -269,7 +271,7 @@ module uart_receiver (
     assign start_bit = (rx == 1'b0 && state == IDLE); // Falling edge indicates start bit
     assign stop_bit  = (bit_count == 3'd7 && state == RECEIVING);
 
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk) begin
         if (!rst_n) begin
             // Reset todos los registros
             received_byte <= 8'd0;
