@@ -269,29 +269,29 @@ module uart_receiver (
     assign start_bit = (rx == 1'b0 && state == IDLE); // Falling edge indicates start bit
     assign stop_bit  = (bit_count == 3'd7 && state == RECEIVING);
 
-    always @(posedge clk) begin
+    always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            // Reset all registers
+            // Reset todos los registros
             received_byte <= 8'd0;
             bit_count <= 3'd0;
             receiving <= 1'b0;
             freq_select <= 6'd0;
-            wave_select <= 3'b000;  // Default to triangle wave
-            white_noise_en <= 1'b0; // Disable white noise
+            wave_select <= 3'b000;  // Por defecto, onda triangular
+            white_noise_en <= 1'b0; // Deshabilitar ruido blanco
             state <= IDLE;
         end else begin
             case (state)
                 IDLE: begin
                     if (start_bit) begin
                         receiving <= 1'b1;
-                        bit_count <= 3'd0;
+                        bit_count <= 0;
                         state <= RECEIVING;
                     end
                 end
 
                 RECEIVING: begin
                     if (receiving) begin
-                        received_byte[bit_count] <= rx; // Shift in received bits
+                        received_byte[bit_count] <= rx;
                         bit_count <= bit_count + 1;
                         if (stop_bit) begin
                             receiving <= 1'b0;
@@ -301,19 +301,14 @@ module uart_receiver (
                 end
 
                 PROCESSING: begin
-                    // Handle received byte and update control signals
                     case (received_byte)
-                        8'h4E: white_noise_en <= 1'b1;           // 'N' - Enable white noise
-                        8'h46: white_noise_en <= 1'b0;           // 'F' - Disable white noise
-                        8'h54: wave_select <= 3'b000;            // 'T' - Triangle wave
-                        8'h53: wave_select <= 3'b001;            // 'S' - Sawtooth wave
-                        8'h51: wave_select <= 3'b010;            // 'Q' - Square wave
-                        8'h57: wave_select <= 3'b011;            // 'W' - Sine wave
-                        default: begin
-                            white_noise_en <= 1'b0;              // Default: Disable white noise
-                            wave_select <= 3'b000;               // Default: Triangle wave
-                            freq_select <= received_byte[5:0];   // Set frequency (lower 6 bits)
-                        end
+                        8'h4E: white_noise_en <= 1'b1;        // 'N' - Habilitar ruido blanco
+                        8'h46: white_noise_en <= 1'b0;        // 'F' - Deshabilitar ruido blanco
+                        8'h54: wave_select <= 3'b000;         // 'T' - Onda triangular
+                        8'h53: wave_select <= 3'b001;         // 'S' - Onda diente de sierra
+                        8'h51: wave_select <= 3'b010;         // 'Q' - Onda cuadrada
+                        8'h57: wave_select <= 3'b011;         // 'W' - Onda seno
+                        default: freq_select <= received_byte[5:0]; // Otros valores para frecuencia
                     endcase
                     state <= IDLE;
                 end
