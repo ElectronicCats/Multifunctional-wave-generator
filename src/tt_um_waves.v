@@ -21,14 +21,45 @@ module tt_um_waves (
         $display("clk_div reached threshold: %d", clk_div);
   end
 
+    // uo_out assignments without conflicts
+    always @(*) begin
+    // Initialize output to avoid latches
+    uo_out = 8'b0;
+
+    // Map I2S signals to uo_out[2:0]
+    uo_out[0] = sck;   // Serial Clock
+    uo_out[1] = sd;    // Serial Data
+    uo_out[2] = ws;    // Word Select
+
+    // Map wave_select to uo_out[2:0] when no I2S is active
+    if (~sck && ~sd && ~ws) begin
+        uo_out[2:0] = wave_select;
+    end
+
+    // Map white_noise_en to uo_out[3]
+    uo_out[3] = white_noise_en;
+
+    // Map truncated freq_select[3:0] to uo_out[7:4]
+    uo_out[7:4] = freq_select[3:0];
+end
+
 
 
     // UART signal
     wire uart_rx = ui_in[0];
-    wire [5:0] freq_select;
+   wire [5:0] freq_select;
     wire [2:0] wave_select; //issues with this signal
     wire unused_ui_in = |ui_in[7:1];
+  
+    assign uio_out = 8'b0;
+    assign uio_oe  = 8'b0;
 
+    // Internal wires and registers
+    wire [2:0] wave_select;
+    wire white_noise_en;
+    wire [3:0] freq_select;
+    wire sck, ws, sd;
+  
     // I2S signals
     wire sck, ws, sd;
 
