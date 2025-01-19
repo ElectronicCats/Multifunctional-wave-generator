@@ -1,75 +1,70 @@
 `timescale 1ns/1ps
 
-module tb;
-    reg clk;
-    reg rst_n;
-    reg rx;
-    wire [2:0] wave_select;
-    wire white_noise_en;
+module tb_uart_wave;
 
-    // Instantiate DUT
-    tt_um_waves dut (
+    reg clk;                 // Clock signal
+    reg rst_n;               // Reset signal (active low)
+    reg rx;                  // UART RX signal
+    wire [2:0] wave_select;  // Selected wave
+    wire white_noise_en;     // White noise enable
+
+    // Instantiate the UART receiver module
+    uart_receiver uut (
         .clk(clk),
         .rst_n(rst_n),
         .rx(rx),
+        .freq_select(),      // Not used for this test
         .wave_select(wave_select),
         .white_noise_en(white_noise_en)
     );
 
-    // Generate 25 MHz clock
-    initial begin
-        clk = 0;
-        forever #20 clk = ~clk;  // 40 ns period
-    end
+    // Clock generation
+    initial clk = 0;
+    always #20 clk = ~clk;  // 25 MHz clock (40 ns period)
 
-    // Reset logic
-    initial begin
-        rst_n = 0;  // Active low reset
-        #100;       // Hold reset for 100 ns
-        rst_n = 1;  // Release reset
-    end
-
-    // UART send task
-    task send_uart_byte;
-        input [7:0] byte;
+    // UART transmission task
+    task send_uart_byte(input [7:0] data);
         integer i;
         begin
-            rx = 1; // Idle state
-            #(104167); // Wait for idle time
             rx = 0; // Start bit
-            #(104167);
+            #8680;  // 115200 baud rate = ~8680 ns per bit
             for (i = 0; i < 8; i = i + 1) begin
-                rx = byte[i];
-                #(104167);
+                rx = data[i];
+                #8680;  // Data bits
             end
             rx = 1; // Stop bit
-            #(104167);
+            #8680;
         end
     endtask
 
-    // Test sequence
+    // Testbench sequence
     initial begin
-        rx = 1;  // Idle state
-        #200;    // Wait for reset
-        $display("Starting UART Test...");
+        // Initialize signals
+        rx = 1;
+        rst_n = 0;
 
-        // Send UART commands and monitor outputs
-        send_uart_byte(8'h54);  // 'T' - Triangle wave
-        #200;
-        $display("Sent 'T': wave_select = %b, white_noise_en = %b", wave_select, white_noise_en);
+        // Apply reset
+        #100;
+        rst_n = 1;
 
-        send_uart_byte(8'h53);  // 'S' - Sawtooth wave
-        #200;
-        $display("Sent 'S': wave_select = %b, white_noise_en = %b", wave_select, white_noise_en);
+        // Send 'T' for Triangle wave
+        #1000;
+        send_uart_byte(8'h54);
 
-        send_uart_byte(8'h4E);  // 'N' - Enable white noise
-        #200;
-        $display("Sent 'N': wave_select = %b, white_noise_en = %b", wave_select, white_noise_en);
+        // Wait and check the output
+        #10000;
+        if (wave_select !== 3'b000) $display("Test failed: Expected 3'b000, got %b", wave_select);
+        else $display("Test passed: Triangle wave selected.");
 
-        send_uart_byte(8'h46);  // 'F' - Disable white noise
-        #200;
-        $display("Sent 'F': wave_select = %b, white_noise_en = %b", wave_select, white_noise_en);
+        // Send 'S' for Sawtooth wave
+        send_uart_byte(8'h53);
 
+        // Wait and check the output
+        #10000;
+        if (wave_select !== 3'b001) $display("Test failed: Expected 3'b001, got %b", wave_select);
+        else $display("Test passed: Sawtooth wave selected.");
+
+        // End simulation
         $finish;
     end
 endmodule
