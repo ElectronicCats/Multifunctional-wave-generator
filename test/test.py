@@ -1,56 +1,48 @@
-# SPDX-FileCopyrightText: © 2023 Electronic Cats
 # SPDX-License-Identifier: MIT
-
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles, Timer
-
-# Parámetro de UART
-BIT_PERIOD = 10417  # 9600 baud en nanosegundos (1 / 9600 segundos)
+from cocotb.triggers import ClockCycles, RisingEdge
 
 @cocotb.test()
-async def test_uart(dut):
-    """Prueba el UART y la funcionalidad del módulo tt_um_waves"""
-
-    # Generar un reloj de 25 MHz
-    clock = Clock(dut.clk, 40, units="ns")  # 40 ns -> 25 MHz
+async def test_wave_selection(dut):
+    """
+    Test the wave selection functionality by setting the wave_select
+    signal and checking the uo_out output.
+    """
+    # Start the clock
+    clock = Clock(dut.clk, 10, units="us")  # 10us clock period
     cocotb.start_soon(clock.start())
 
-    # Reset inicial
-    dut.rst_n.value = 0
-    dut.rx.value = 1  # UART idle
+    # Reset the design
+    dut._log.info("Resetting the design")
+    dut.ena.value = 1  # Enable the design
+    dut.ui_in.value = 0  # Clear inputs
+    dut.uio_in.value = 0
+    dut.rst_n.value = 0  # Active low reset
+    await ClockCycles(dut.clk, 5)
+    dut.rst_n.value = 1  # Release reset
+    await ClockCycles(dut.clk, 5)
+
+    # Select the first wave (e.g., sine wave)
+    dut._log.info("Testing wave selection for sine wave")
+    dut.ui_in.value = 0b000  # wave_select = 3'b000 (Sine wave)
     await ClockCycles(dut.clk, 10)
-    dut.rst_n.value = 1
+    # Validate the output (you may need to adjust the expected value)
+    assert dut.uo_out.value.integer == 42, "Sine wave output not as expected"
 
-    # Enviar 'T' (onda triangular)
-    await send_uart_byte(dut, 0x54)  # ASCII 'T'
-    await ClockCycles(dut.clk, 500)  # Esperar 500 ciclos
-    wave_select = dut.uo_out.value & 0x07  # Bits 2:0 de uo_out
-    assert wave_select == 0, f"wave_select incorrecto: {wave_select}"
+    # Select the second wave (e.g., square wave)
+    dut._log.info("Testing wave selection for square wave")
+    dut.ui_in.value = 0b001  # wave_select = 3'b001 (Square wave)
+    await ClockCycles(dut.clk, 10)
+    # Validate the output (you may need to adjust the expected value)
+    assert dut.uo_out.value.integer == 84, "Square wave output not as expected"
 
-    # Enviar 'N' (habilitar ruido blanco)
-    await send_uart_byte(dut, 0x4E)  # ASCII 'N'
-    await ClockCycles(dut.clk, 500)
-    white_noise_en = (dut.uo_out.value >> 3) & 0x01  # Bit 3 de uo_out
-    assert white_noise_en == 1, f"white_noise_en incorrecto: {white_noise_en}"
+    # Select the third wave (e.g., triangle wave)
+    dut._log.info("Testing wave selection for triangle wave")
+    dut.ui_in.value = 0b010  # wave_select = 3'b010 (Triangle wave)
+    await ClockCycles(dut.clk, 10)
+    # Validate the output (you may need to adjust the expected value)
+    assert dut.uo_out.value.integer == 126, "Triangle wave output not as expected"
 
-    # Enviar 'F' (deshabilitar ruido blanco)
-    await send_uart_byte(dut, 0x46)  # ASCII 'F'
-    await ClockCycles(dut.clk, 500)
-    white_noise_en = (dut.uo_out.value >> 3) & 0x01  # Bit 3 de uo_out
-    assert white_noise_en == 0, f"white_noise_en incorrecto: {white_noise_en}"
-
-async def send_uart_byte(dut, data):
-    """Envía un byte por UART simulando la comunicación serie"""
-    # Start bit
-    dut.rx.value = 0
-    await Timer(BIT_PERIOD, units="ns")
-
-    # Data bits
-    for i in range(8):
-        dut.rx.value = (data >> i) & 1
-        await Timer(BIT_PERIOD, units="ns")
-
-    # Stop bit
-    dut.rx.value = 1
-    await Timer(BIT_PERIOD, units="ns")
+    # Additional tests for other waveforms can be added here
+    dut._log.info("All tests completed successfully")

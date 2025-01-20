@@ -1,71 +1,25 @@
+/*
+ * Copyright (c) 2024 Your Name
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 `define default_netname none
 
 module tt_um_waves (
-    input  wire [7:0] ui_in,    // ui_in[0] for UART RX
-    output reg [7:0] uo_out,    // Dedicated outputs: uo_out[2:0] = {WS, SD, SCK} for I2S
-    input  wire [7:0] uio_in,   // GPIO for encoder inputs
-    output wire [7:0] uio_out,  // IOs: Unused, set to 0
-    output wire [7:0] uio_oe,   // IOs: Enable path (set to input mode, all 0)
-    input  wire       ena,      // Enable signal
-    input  wire       clk,      // System clock
-    input  wire       rst_n     // Reset, active low
+    input  wire [7:0] ui_in,    // Dedicated inputs
+    output wire [7:0] uo_out,   // Dedicated outputs
+    input  wire [7:0] uio_in,   // IOs: Input path
+    output wire [7:0] uio_out,  // IOs: Output path
+    output wire [7:0] uio_oe,   // IOs: Enable path (active high: 0=input, 1=output)
+    input  wire       ena,      // will go high when the design is enabled
+    input  wire       clk,      // clock
+    input  wire       rst_n     // reset_n - low to reset
 );
-  
-  always @(posedge clk) begin
-    $display("clk_divided: %b, tri_wave_out: %b", clk_divided, tri_wave_out);
-  end
-  
-  
-  always @(posedge clk) begin
-    if (clk_div == clk_div_threshold)
-        $display("clk_div reached threshold: %d", clk_div);
-  end
 
-    // uo_out assignments without conflicts
-    always @(*) begin
-    // Initialize output to avoid latches
-    uo_out = 8'b0;
-
-    // Map I2S signals to uo_out[2:0]
-    uo_out[0] = sck;   // Serial Clock
-    uo_out[1] = sd;    // Serial Data
-    uo_out[2] = ws;    // Word Select
-
-    // Map wave_select to uo_out[2:0] when no I2S is active
-    if (~sck && ~sd && ~ws) begin
-        uo_out[2:0] = wave_select;
-    end
-
-    // Map white_noise_en to uo_out[3]
-    uo_out[3] = white_noise_en;
-
-    // Map truncated freq_select[3:0] to uo_out[7:4]
-    uo_out[7:4] = freq_select[3:0];
-end
-
-
-
-    // UART signal
-    wire uart_rx = ui_in[0];
-   wire [5:0] freq_select;
-    wire [2:0] wave_select; //issues with this signal
-    wire unused_ui_in = |ui_in[7:1];
-  
-    assign uio_out = 8'b0;
-    assign uio_oe  = 8'b0;
-
-    // Internal wires and registers
+    // Signals from UART
+    wire [5:0] freq_select;
     wire [2:0] wave_select;
-    wire white_noise_en;
-    wire [3:0] freq_select;
-    wire sck, ws, sd;
-  
-    // I2S signals
-    wire sck, ws, sd;
-
-    // White noise
-    reg [7:0] white_noise_out;
-    wire white_noise_en;     //issue with this signal 
+    wire       white_noise_en;
 
     // ADSR encoder signals from uio_in
     wire encoder_a_attack = uio_in[0];
@@ -80,32 +34,34 @@ end
     // Control values from ADSR
     wire [7:0] attack, decay, sustain, rel;
     wire [7:0] adsr_amplitude;
-    reg [7:0] selected_wave;
+
+    // Clock divider and wave generation
     reg [31:0] clk_div, clk_div_threshold;
     reg clk_divided;
+    reg [7:0] selected_wave;
+    reg [7:0] white_noise_out;
 
     // Wave generator outputs
     reg [7:0] tri_wave_out, saw_wave_out, sqr_wave_out, sine_wave_out;
 
     // Initialize signals
     initial begin
-        uo_out = 8'b0;
-        selected_wave = 8'b0;
         clk_div = 32'b0;
         clk_div_threshold = 32'b0;
         clk_divided = 1'b0;
+        selected_wave = 8'b0;
+        white_noise_out = 8'b0;
         tri_wave_out = 8'b0;
         saw_wave_out = 8'b0;
         sqr_wave_out = 8'b0;
         sine_wave_out = 8'b0;
-        white_noise_out = 8'b0;
     end
 
     // UART Receiver Instance
     uart_receiver uart_rx_inst (
         .clk(clk),
         .rst_n(rst_n),
-        .rx(uart_rx),
+        .rx(ui_in[0]),  // Assuming RX is connected to ui_in[0]
         .freq_select(freq_select),
         .wave_select(wave_select),
         .white_noise_en(white_noise_en)
@@ -125,8 +81,6 @@ end
             end
         end
     end
-
-
 
     // Clock divider threshold selection based on `freq_select`
     always @(*) begin
@@ -201,9 +155,7 @@ end
             6'b111011: clk_div_threshold = 32'd6358;     // B6 (1975.53 Hz)
             default: clk_div_threshold = 32'd284091; // Default to A4 (440 Hz)
         endcase
-        $display("Freq Select: %b, Clock Divider Threshold: %d", freq_select, clk_div_threshold);
     end
-
 
     // Instantiate encoders
     encoder #(.WIDTH(8), .INCREMENT(1)) attack_encoder (.clk(clk), .rst_n(rst_n), .a(encoder_a_attack), .b(encoder_b_attack), .value(attack), .ena(ena));
@@ -212,12 +164,19 @@ end
     encoder #(.WIDTH(8), .INCREMENT(1)) release_encoder(.clk(clk), .rst_n(rst_n), .a(encoder_a_release), .b(encoder_b_release), .value(rel), .ena(ena));
 
     // Wave generators and ADSR
-    triangular_wave_generator triangle_gen(.clk(clk_divided), .rst_n(rst_n), .wave_out(tri_wave_out), .ena(ena));
-    sawtooth_wave_generator   saw_gen(.clk(clk_divided), .rst_n(rst_n), .wave_out(saw_wave_out), .ena(ena));
-    square_wave_generator     sqr_gen(.clk(clk_divided), .rst_n(rst_n), .wave_out(sqr_wave_out), .ena(ena));
-    sine_wave_generator       sine_gen(.clk(clk_divided), .rst_n(rst_n), .wave_out(sine_wave_out), .ena(ena));
-    adsr_generator            adsr_gen(.clk(clk_divided), .rst_n(rst_n), .attack(attack), .decay(decay), .sustain(sustain), .rel(rel), .amplitude(adsr_amplitude), .ena(ena));
+    triangular_wave_generator triangle_gen (.clk(clk_divided), .rst_n(rst_n), .wave_out(tri_wave_out), .ena(ena));
+    sawtooth_wave_generator   saw_gen      (.clk(clk_divided), .rst_n(rst_n), .wave_out(saw_wave_out), .ena(ena));
+    square_wave_generator     sqr_gen      (.clk(clk_divided), .rst_n(rst_n), .wave_out(sqr_wave_out), .ena(ena));
+    sine_wave_generator       sine_gen     (.clk(clk_divided), .rst_n(rst_n), .wave_out(sine_wave_out), .ena(ena));
+    adsr_generator            adsr_gen     (.clk(clk_divided), .rst_n(rst_n), .attack(attack), .decay(decay), .sustain(sustain), .rel(rel), .amplitude(adsr_amplitude), .ena(ena));
 
+    // White Noise Generator
+    always @(posedge clk_divided) begin
+        if (!rst_n)
+            white_noise_out <= 8'b0;
+        else
+            white_noise_out <= white_noise_out + 1;  // Example LFSR logic
+    end
 
     // Select the Wave
     always @(*) begin
@@ -231,50 +190,24 @@ end
         endcase
     end
 
-
-
     // I2S Output Module
     i2s_transmitter i2s_out (
         .clk(clk),
         .rst_n(rst_n),
         .data((selected_wave * adsr_amplitude) >> 8),
-        .sck(sck),
-        .ws(ws),
-        .sd(sd),
+        .sck(uo_out[0]),
+        .ws(uo_out[1]),
+        .sd(uo_out[2]),
         .ena(ena)
     );
 
-    // White Noise Generator
-    always @(posedge clk_divided) begin
-        if (!rst_n)
-            white_noise_out <= 8'b0;
-        else
-            white_noise_out <= white_noise_out + 1;  // Example LFSR logic
-    end
-
     // Assign Outputs
-    always @(*) begin
-        uo_out[0] = sck;
-        uo_out[1] = ws;
-        uo_out[2] = sd;
-        uo_out[7:3] = 5'b0;  // Unused bits
-    end
-
-    assign uio_out = 8'b0;
-    assign uio_oe = 8'b0;
-  
-  assign uio_out[0] = white_noise_en;    // White noise enable
-  assign uio_out[3:1] = wave_select;     // Wave selection
-  assign uio_out[4] = clk_divided;       // Divided clock
-  assign uio_out[5] = ena;               // Enable signal
-  assign uio_out[6] = tri_wave_out[0];   // Example wave output
-
-  assign uo_out[2:0] = wave_select;         // Map wave_select to uo_out[2:0]
-  assign uo_out[3]   = white_noise_en;      // Map white_noise_en to uo_out[3]
-  assign uo_out[7:4] = freq_select[3:0];    // Map lower 4 bits of freq_select to uo_out[7:4]
-
+    assign uo_out[7:3] = 5'b0; // Remaining unused bits
+    assign uio_out = 8'b0;     // Unused IOs
+    assign uio_oe = 8'b0;      // All IOs set to input mode
 
 endmodule
+
 
 
 module uart_receiver (
