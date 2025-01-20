@@ -35,6 +35,9 @@ module tt_um_waves (
     wire [7:0] attack, decay, sustain, rel;
     wire [7:0] adsr_amplitude;
 
+    //unused_signals
+    wire [6:0] unused_ui_in = ui_in[7:1];
+
     // Clock divider and wave generation
     reg [31:0] clk_div, clk_div_threshold;
     reg clk_divided;
