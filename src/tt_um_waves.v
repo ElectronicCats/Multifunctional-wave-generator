@@ -1,8 +1,3 @@
-/*
- * Copyright (c) 2024 Your Name
- * SPDX-License-Identifier: Apache-2.0
- */
-
 `define default_netname none
 
 module tt_um_waves (
@@ -24,8 +19,8 @@ module tt_um_waves (
     // ADSR encoder signals from uio_in
     wire encoder_a_attack = uio_in[0];
     wire encoder_b_attack = uio_in[1];
-    wire encoder_a_decay = uio_in[2];
-    wire encoder_b_decay = uio_in[3];
+    wire encoder_a_decay  = uio_in[2];
+    wire encoder_b_decay  = uio_in[3];
     wire encoder_a_sustain = uio_in[4];
     wire encoder_b_sustain = uio_in[5];
     wire encoder_a_release = uio_in[6];
@@ -35,7 +30,7 @@ module tt_um_waves (
     wire [7:0] attack, decay, sustain, rel;
     wire [7:0] adsr_amplitude;
 
-    //unused_signals
+    // Unused signals
     wire [6:0] unused_ui_in = ui_in[7:1];
 
     // Clock divider and wave generation
@@ -46,19 +41,6 @@ module tt_um_waves (
 
     // Wave generator outputs
     reg [7:0] tri_wave_out, saw_wave_out, sqr_wave_out, sine_wave_out;
-
-    // Initialize signals
-    initial begin
-        clk_div = 32'b0;
-        clk_div_threshold = 32'b0;
-        clk_divided = 1'b0;
-        selected_wave = 8'b0;
-        white_noise_out = 8'b0;
-        tri_wave_out = 8'b0;
-        saw_wave_out = 8'b0;
-        sqr_wave_out = 8'b0;
-        sine_wave_out = 8'b0;
-    end
 
     // UART Receiver Instance
     uart_receiver uart_rx_inst (
@@ -161,17 +143,50 @@ module tt_um_waves (
     end
 
     // Instantiate encoders
-    encoder #(.WIDTH(8), .INCREMENT(1)) attack_encoder (.clk(clk), .rst_n(rst_n), .a(encoder_a_attack), .b(encoder_b_attack), .value(attack), .ena(ena));
-    encoder #(.WIDTH(8), .INCREMENT(1)) decay_encoder  (.clk(clk), .rst_n(rst_n), .a(encoder_a_decay),  .b(encoder_b_decay),  .value(decay),  .ena(ena));
-    encoder #(.WIDTH(8), .INCREMENT(1)) sustain_encoder(.clk(clk), .rst_n(rst_n), .a(encoder_a_sustain),.b(encoder_b_sustain),.value(sustain),.ena(ena));
-    encoder #(.WIDTH(8), .INCREMENT(1)) release_encoder(.clk(clk), .rst_n(rst_n), .a(encoder_a_release), .b(encoder_b_release), .value(rel), .ena(ena));
+    encoder #(.WIDTH(8), .INCREMENT(1)) attack_encoder (
+        .clk(clk), .rst_n(rst_n),
+        .a(encoder_a_attack), .b(encoder_b_attack),
+        .value(attack), .ena(ena)
+    );
+    encoder #(.WIDTH(8), .INCREMENT(1)) decay_encoder (
+        .clk(clk), .rst_n(rst_n),
+        .a(encoder_a_decay), .b(encoder_b_decay),
+        .value(decay), .ena(ena)
+    );
+    encoder #(.WIDTH(8), .INCREMENT(1)) sustain_encoder (
+        .clk(clk), .rst_n(rst_n),
+        .a(encoder_a_sustain), .b(encoder_b_sustain),
+        .value(sustain), .ena(ena)
+    );
+    encoder #(.WIDTH(8), .INCREMENT(1)) release_encoder (
+        .clk(clk), .rst_n(rst_n),
+        .a(encoder_a_release), .b(encoder_b_release),
+        .value(rel), .ena(ena)
+    );
 
     // Wave generators and ADSR
-    triangular_wave_generator triangle_gen (.clk(clk_divided), .rst_n(rst_n), .wave_out(tri_wave_out), .ena(ena));
-    sawtooth_wave_generator   saw_gen      (.clk(clk_divided), .rst_n(rst_n), .wave_out(saw_wave_out), .ena(ena));
-    square_wave_generator     sqr_gen      (.clk(clk_divided), .rst_n(rst_n), .wave_out(sqr_wave_out), .ena(ena));
-    sine_wave_generator       sine_gen     (.clk(clk_divided), .rst_n(rst_n), .wave_out(sine_wave_out), .ena(ena));
-    adsr_generator            adsr_gen     (.clk(clk_divided), .rst_n(rst_n), .attack(attack), .decay(decay), .sustain(sustain), .rel(rel), .amplitude(adsr_amplitude), .ena(ena));
+    triangular_wave_generator triangle_gen (
+        .clk(clk_divided), .rst_n(rst_n),
+        .wave_out(tri_wave_out), .ena(ena)
+    );
+    sawtooth_wave_generator saw_gen (
+        .clk(clk_divided), .rst_n(rst_n),
+        .wave_out(saw_wave_out), .ena(ena)
+    );
+    square_wave_generator sqr_gen (
+        .clk(clk_divided), .rst_n(rst_n),
+        .wave_out(sqr_wave_out), .ena(ena)
+    );
+    sine_wave_generator sine_gen (
+        .clk(clk_divided), .rst_n(rst_n),
+        .wave_out(sine_wave_out), .ena(ena)
+    );
+    adsr_generator adsr_gen (
+        .clk(clk_divided), .rst_n(rst_n),
+        .attack(attack), .decay(decay),
+        .sustain(sustain), .rel(rel),
+        .amplitude(adsr_amplitude), .ena(ena)
+    );
 
     // White Noise Generator
     always @(posedge clk_divided) begin
@@ -210,6 +225,7 @@ module tt_um_waves (
     assign uio_oe = 8'b0;      // All IOs set to input mode
 
 endmodule
+
 
 
 
@@ -355,16 +371,18 @@ endmodule
 
 
 module sine_wave_generator (
-    input  wire       ena,      // Enable signal
-    input wire clk,                  // Clock
-    input wire rst_n,                // Active-low reset
-    output reg [7:0] wave_out        // 8-bit sine wave output
+    input  wire       ena,       // Enable signal
+    input  wire       clk,       // Clock
+    input  wire       rst_n,     // Active-low reset
+    input  wire [15:0] freq_select, // Frequency selection
+    output reg  [7:0] wave_out   // 8-bit sine wave output
 );
 
-    reg [7:0] counter;               // Counter for indexing the sine table
-    reg [7:0] sine_table [0:255];    // Sine table (256 values of 8 bits)
+    reg [7:0] counter;
+    reg [7:0] sine_table [0:255];  // Lookup table for sine wave
+    reg [15:0] clk_div;             // Clock divider
 
-    // Initialization of the sine wave table
+    // Initialize sine wave table (only first and last few values shown)
     initial begin
         sine_table[0] = 8'd128;
         sine_table[1] = 8'd131;
@@ -624,53 +642,72 @@ module sine_wave_generator (
         sine_table[255] = 8'd124;
     end
 
-    // Sine wave generation logic with synchronous reset
     always @(posedge clk) begin
         if (!rst_n) begin
             counter <= 8'd0;
+            clk_div <= 16'd0;
             wave_out <= 8'd0;
         end else if (ena) begin
-            counter <= counter + 8'd1;
-            wave_out <= sine_table[counter];
+            clk_div <= clk_div + 1;
+            if (clk_div >= freq_select) begin  // Adjust frequency based on freq_select
+                clk_div <= 0;
+                counter <= counter + 1;
+                wave_out <= sine_table[counter];
+            end
         end
     end
 endmodule
+
 
 module square_wave_generator (
-    input  wire       ena,      // Enable signal
-    input wire clk,                  // Clock
-    input wire rst_n,                // Active-low reset
-    output reg [7:0] wave_out        // 8-bit square wave output
+    input  wire       ena,       // Enable signal
+    input  wire       clk,       // Clock
+    input  wire       rst_n,     // Active-low reset
+    input  wire [15:0] freq_select, // Frequency selection
+    output reg  [7:0] wave_out   // 8-bit square wave output
 );
 
-    reg wave_state;                  // State of the square wave
+    reg wave_state;
+    reg [15:0] clk_div;
 
-    always @(posedge clk) 
-    begin
+    always @(posedge clk) begin
         if (!rst_n) begin
-            wave_state <= 1'b0;
-            wave_out <= 8'd0;
+            clk_div <= 0;
+            wave_state <= 0;
+            wave_out <= 0;
         end else if (ena) begin
-            wave_state <= ~wave_state;
-            wave_out <= wave_state ? 8'd255 : 8'd0;
+            clk_div <= clk_div + 1;
+            if (clk_div >= freq_select) begin
+                clk_div <= 0;
+                wave_state <= ~wave_state;
+                wave_out <= wave_state ? 8'd255 : 8'd0;
+            end
         end
     end
 endmodule
 
+
 module sawtooth_wave_generator (
-    input  wire       ena,      // Enable signal
-    input wire clk,                  // Clock
-    input wire rst_n,                // Active-low reset
-    output reg [7:0] wave_out        // 8-bit sawtooth wave output
+    input  wire       ena,       // Enable signal
+    input  wire       clk,       // Clock
+    input  wire       rst_n,     // Active-low reset
+    input  wire [15:0] freq_select, // Frequency selection
+    output reg  [7:0] wave_out   // 8-bit sawtooth wave output
 );
 
     reg [7:0] counter;
+    reg [15:0] clk_div;
 
     always @(posedge clk) begin
         if (!rst_n) begin
             counter <= 8'd0;
+            clk_div <= 16'd0;
         end else if (ena) begin
-            counter <= counter + 1;
+            clk_div <= clk_div + 1;
+            if (clk_div >= freq_select) begin
+                clk_div <= 0;
+                counter <= counter + 1;
+            end
         end
     end
 
@@ -678,6 +715,7 @@ module sawtooth_wave_generator (
         wave_out <= counter;
     end
 endmodule
+
 
 
 module adsr_generator (
@@ -754,46 +792,43 @@ module adsr_generator (
 endmodule
 
 module triangular_wave_generator (
-    input  wire       ena,      // Enable signal
-    input  wire       clk,      // Clock
-    input  wire       rst_n,    // Active-low reset
-    output reg [7:0]  wave_out  // 8-bit triangular wave output
+    input  wire       ena,       // Enable signal
+    input  wire       clk,       // Clock
+    input  wire       rst_n,     // Active-low reset
+    input  wire [15:0] freq_select, // Frequency selection
+    output reg [7:0]  wave_out   // 8-bit triangular wave output
 );
 
     reg [7:0] counter;
     reg       direction;
-
-    // Inicialización
-    initial begin
-        counter   = 8'd0;
-        direction = 1'b1;
-        wave_out  = 8'd0;
-    end
+    reg [15:0] clk_div;
 
     always @(posedge clk) begin
         if (!rst_n) begin
             counter   <= 8'd0;
             direction <= 1'b1;
+            clk_div   <= 16'd0;
             wave_out  <= 8'd0;
         end else if (ena) begin
-            // Lógica para generar la onda triangular
-            if (direction) begin
-                if (counter < 8'd255) begin
-                    counter <= counter + 1;
+            clk_div <= clk_div + 1;
+            if (clk_div >= freq_select) begin
+                clk_div <= 0;
+                if (direction) begin
+                    if (counter < 8'd255) counter <= counter + 1;
+                    else direction <= 1'b0;
                 end else begin
-                    direction <= 1'b0; // Cambia de dirección
-                end
-            end else begin
-                if (counter > 8'd0) begin
-                    counter <= counter - 1;
-                end else begin
-                    direction <= 1'b1; // Cambia de dirección
+                    if (counter > 8'd0) counter <= counter - 1;
+                    else direction <= 1'b1;
                 end
             end
-            wave_out <= counter;
         end
     end
+
+    always @(posedge clk) begin
+        wave_out <= counter;
+    end
 endmodule
+
 
 
 
