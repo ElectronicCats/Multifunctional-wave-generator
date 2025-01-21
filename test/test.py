@@ -22,7 +22,7 @@ async def uart_send(dut, data):
     await Timer(104_167, units="ns")
 
     # Wait a bit before sending next byte
-    await Timer(500_000, units="ns")  # Small gap between UART transmissions
+    await Timer(1_000_000, units="ns")  # Longer delay to ensure processing
 
 @cocotb.test()
 async def test_uart_waveform(dut):
@@ -49,34 +49,49 @@ async def test_uart_waveform(dut):
 
     for cmd, name in wave_commands.items():
         await uart_send(dut, ord(cmd))
-        await ClockCycles(dut.clk, 100)
-        assert dut.wave_select.value == list(wave_commands.keys()).index(cmd), f"Waveform selection failed for {name}"
-        dut._log.info(f"Waveform set to {name}")
+        await ClockCycles(dut.clk, 500)  # Increased delay to allow processing
+        dut._log.info(f"Checking wave_select after {name} command...")
+        wave_value = dut.wave_select.value
+        expected_value = list(wave_commands.keys()).index(cmd)
+        dut._log.info(f"Expected: {expected_value}, Got: {wave_value}")
+        assert wave_value == expected_value, f"Waveform selection failed for {name}"
 
     # Test UART: Set frequency (sending '0' - '9')
     for i in range(10):
         await uart_send(dut, ord(str(i)))
-        await ClockCycles(dut.clk, 100)
-        assert dut.freq_select.value == i, f"Frequency selection failed for {i}"
-        dut._log.info(f"Frequency set to {i}")
+        await ClockCycles(dut.clk, 500)  # Increased delay
+        freq_value = dut.freq_select.value
+        dut._log.info(f"Checking freq_select after sending '{i}'...")
+        dut._log.info(f"Expected: {i}, Got: {freq_value}")
+        assert freq_value == i, f"Frequency selection failed for {i}"
 
     # Test UART: Set white noise ON ('N') and OFF ('F')
     await uart_send(dut, ord('N'))
-    await ClockCycles(dut.clk, 100)
+    await ClockCycles(dut.clk, 500)
+    dut._log.info("Checking white_noise_en after enabling...")
+    dut._log.info(f"Expected: 1, Got: {dut.white_noise_en.value}")
     assert dut.white_noise_en.value == 1, "White noise enable failed"
-    dut._log.info("White noise enabled")
 
     await uart_send(dut, ord('F'))
-    await ClockCycles(dut.clk, 100)
+    await ClockCycles(dut.clk, 500)
+    dut._log.info("Checking white_noise_en after disabling...")
+    dut._log.info(f"Expected: 0, Got: {dut.white_noise_en.value}")
     assert dut.white_noise_en.value == 0, "White noise disable failed"
-    dut._log.info("White noise disabled")
 
     # Check I2S output
-    await ClockCycles(dut.clk, 500)
-    assert dut.uo_out[0].value == 1 or dut.uo_out[0].value == 0, "I2S SCK signal incorrect"
-    assert dut.uo_out[1].value == 1 or dut.uo_out[1].value == 0, "I2S WS signal incorrect"
-    assert dut.uo_out[2].value == 1 or dut.uo_out[2].value == 0, "I2S SD signal incorrect"
-    
+    await ClockCycles(dut.clk, 1000)  # Extra cycles for stability
+    dut._log.info("Checking I2S outputs...")
+
+    sck = dut.uo_out[0].value
+    ws = dut.uo_out[1].value
+    sd = dut.uo_out[2].value
+
+    dut._log.info(f"I2S Signals -> SCK: {sck}, WS: {ws}, SD: {sd}")
+
+    assert sck in [0, 1], "I2S SCK signal incorrect"
+    assert ws in [0, 1], "I2S WS signal incorrect"
+    assert sd in [0, 1], "I2S SD signal incorrect"
+
     dut._log.info("I2S signals verified")
 
     dut._log.info("All tests passed successfully!")

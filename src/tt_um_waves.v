@@ -34,7 +34,7 @@ module tt_um_waves (
     wire [6:0] unused_ui_in = ui_in[7:1];
 
     // Clock divider threshold for frequency selection
-    reg [31:0] freq_divider;
+    reg [15:0] freq_divider;
 
     always @(*) begin
     case (freq_select)
@@ -216,10 +216,10 @@ end
     i2s_transmitter i2s_out (
         .clk(clk),
         .rst_n(rst_n),
-        .data(wave_out),     // Send generated wave data
-        .sck(uo_out[0]),     // I2S Serial Clock
-        .ws(uo_out[1]),      // I2S Word Select
-        .sd(uo_out[2]),      // I2S Serial Data
+        .data((wave_out * adsr_amplitude) >> 8),     // Send generated wave data
+        .sck(uo_out[0]),                            // I2S Serial Clock
+        .ws(uo_out[1]),                             // I2S Word Select
+        .sd(uo_out[2]),                             // I2S Serial Data
         .ena(ena)
     );
 
