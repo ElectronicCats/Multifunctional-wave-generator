@@ -34,7 +34,18 @@ module tt_um_waves (
     wire [6:0] unused_ui_in = ui_in[7:1];
 
     // Clock divider threshold for frequency selection
-    reg [31:0] freq_divider;
+  reg [31:0] freq_divider;
+  reg [31:0] clk_div;
+  
+  always @(posedge clk) begin
+    if (!rst_n) begin
+        clk_div <= 32'd0;
+    end else if (clk_div >= freq_divider) begin 
+        clk_div <= 32'd0;
+    end else begin
+        clk_div <= clk_div + 1;
+    end
+end
 
     always @(*) begin
     case (freq_select)
@@ -184,11 +195,12 @@ end
         .freq_select(freq_select),
         .wave_select(wave_select),
         .white_noise_en(white_noise_en),
-        .wave_out(wave_out)
+        .wave_out(selected_wave)
     );
   
   // Waveform Output
     wire [7:0] wave_out;
+  wire [7:0] scaled_wave;
 
     // White Noise Generator
     reg [7:0] white_noise_out;
@@ -199,29 +211,34 @@ end
             white_noise_out <= white_noise_out + 1;  // Simple pseudo-random noise
     end
 
-    // Select the Waveform
     reg [7:0] selected_wave;
+
     always @(*) begin
-        case ({white_noise_en, wave_select})
-            4'b1000: selected_wave = white_noise_out;   // White noise
-            4'b0001: selected_wave = tri_wave_out;      // Triangle wave
-            4'b0010: selected_wave = saw_wave_out;      // Sawtooth wave
-            4'b0011: selected_wave = sqr_wave_out;      // Square wave
-            4'b0100: selected_wave = sine_wave_out;     // Sine wave
-            default: selected_wave = 8'd0;              // Default to zero
+       case ({white_noise_en, wave_select})
+           4'b1000: selected_wave = 8'hFF;           // White noise
+           4'b0001: selected_wave = tri_wave_out;    // Triangle wave
+           4'b0010: selected_wave = saw_wave_out;    // Sawtooth wave
+           4'b0011: selected_wave = sqr_wave_out;    // Square wave
+           4'b0100: selected_wave = sine_wave_out;   // Sine wave
+           default: selected_wave = 8'd0;
         endcase
     end
 
+  
+  assign scaled_wave = (selected_wave * adsr_amplitude) >> 8;
+  
+
     // I2S Output Module
     i2s_transmitter i2s_out (
-        .clk(clk),
-        .rst_n(rst_n),
-        .data((wave_out * adsr_amplitude) >> 8),     // Send generated wave data
-        .sck(uo_out[0]),                            // I2S Serial Clock
-        .ws(uo_out[1]),                             // I2S Word Select
-        .sd(uo_out[2]),                             // I2S Serial Data
-        .ena(ena)
-    );
+    .clk(clk),
+    .rst_n(rst_n),
+    .data(scaled_wave),  // ADSR amplitude scaling
+    .sck(uo_out[0]),
+    .ws(uo_out[1]),
+    .sd(uo_out[2]),
+    .ena(ena)
+);
+
 
     // Assign Outputs
     assign uo_out[7:3] = 5'b0; // Remaining unused bits
