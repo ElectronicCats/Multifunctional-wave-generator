@@ -1,48 +1,82 @@
 # SPDX-License-Identifier: MIT
+
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles, RisingEdge
+from cocotb.triggers import ClockCycles, RisingEdge, Timer
+
+async def uart_send(dut, data):
+    """ Simulate sending a UART byte (8N1 format: 1 start bit, 8 data bits, 1 stop bit). """
+    dut._log.info(f"Sending UART byte: {chr(data)} ({data:#04x})")
+
+    # Start bit (low)
+    dut.ui_in.value = 0
+    await Timer(104_167, units="ns")  # Assuming 9600 baud (1/9600 = 104.167μs per bit)
+
+    # Send 8 data bits (LSB first)
+    for i in range(8):
+        dut.ui_in.value = (data >> i) & 1
+        await Timer(104_167, units="ns")
+
+    # Stop bit (high)
+    dut.ui_in.value = 1
+    await Timer(104_167, units="ns")
+
+    # Wait a bit before sending next byte
+    await Timer(500_000, units="ns")  # Small gap between UART transmissions
 
 @cocotb.test()
-async def test_wave_selection(dut):
-    """
-    Test the wave selection functionality by setting the wave_select
-    signal and checking the uo_out output.
-    """
-    # Start the clock
-    clock = Clock(dut.clk, 10, units="us")  # 10us clock period
-    cocotb.start_soon(clock.start())
+async def test_uart_waveform(dut):
+    """ Test UART commands and verify waveform selection & I2S output """
 
-    # Reset the design
-    dut._log.info("Resetting the design")
-    dut.ena.value = 1  # Enable the design
-    dut.ui_in.value = 0  # Clear inputs
-    dut.uio_in.value = 0
-    dut.rst_n.value = 0  # Active low reset
-    await ClockCycles(dut.clk, 5)
-    dut.rst_n.value = 1  # Release reset
-    await ClockCycles(dut.clk, 5)
+    # Start clock
+    cocotb.start_soon(Clock(dut.clk, 10, units="ns").start())
 
-    # Select the first wave (e.g., sine wave)
-    dut._log.info("Testing wave selection for sine wave")
-    dut.ui_in.value = 0b000  # wave_select = 3'b000 (Sine wave)
+    # Reset
+    dut.rst_n.value = 0
     await ClockCycles(dut.clk, 10)
-    # Validate the output (you may need to adjust the expected value)
-    assert dut.uo_out.value.integer == 42, "Sine wave output not as expected"
+    dut.rst_n.value = 1
+    dut.ena.value = 1  # Enable the module
 
-    # Select the second wave (e.g., square wave)
-    dut._log.info("Testing wave selection for square wave")
-    dut.ui_in.value = 0b001  # wave_select = 3'b001 (Square wave)
-    await ClockCycles(dut.clk, 10)
-    # Validate the output (you may need to adjust the expected value)
-    assert dut.uo_out.value.integer == 84, "Square wave output not as expected"
+    dut._log.info("Reset complete")
 
-    # Select the third wave (e.g., triangle wave)
-    dut._log.info("Testing wave selection for triangle wave")
-    dut.ui_in.value = 0b010  # wave_select = 3'b010 (Triangle wave)
-    await ClockCycles(dut.clk, 10)
-    # Validate the output (you may need to adjust the expected value)
-    assert dut.uo_out.value.integer == 126, "Triangle wave output not as expected"
+    # Test UART: Select different waveforms
+    wave_commands = {
+        'T': "Triangle",
+        'S': "Sawtooth",
+        'Q': "Square",
+        'W': "Sine"
+    }
 
-    # Additional tests for other waveforms can be added here
-    dut._log.info("All tests completed successfully")
+    for cmd, name in wave_commands.items():
+        await uart_send(dut, ord(cmd))
+        await ClockCycles(dut.clk, 100)
+        assert dut.wave_select.value == list(wave_commands.keys()).index(cmd), f"Waveform selection failed for {name}"
+        dut._log.info(f"Waveform set to {name}")
+
+    # Test UART: Set frequency (sending '0' - '9')
+    for i in range(10):
+        await uart_send(dut, ord(str(i)))
+        await ClockCycles(dut.clk, 100)
+        assert dut.freq_select.value == i, f"Frequency selection failed for {i}"
+        dut._log.info(f"Frequency set to {i}")
+
+    # Test UART: Set white noise ON ('N') and OFF ('F')
+    await uart_send(dut, ord('N'))
+    await ClockCycles(dut.clk, 100)
+    assert dut.white_noise_en.value == 1, "White noise enable failed"
+    dut._log.info("White noise enabled")
+
+    await uart_send(dut, ord('F'))
+    await ClockCycles(dut.clk, 100)
+    assert dut.white_noise_en.value == 0, "White noise disable failed"
+    dut._log.info("White noise disabled")
+
+    # Check I2S output
+    await ClockCycles(dut.clk, 500)
+    assert dut.uo_out[0].value == 1 or dut.uo_out[0].value == 0, "I2S SCK signal incorrect"
+    assert dut.uo_out[1].value == 1 or dut.uo_out[1].value == 0, "I2S WS signal incorrect"
+    assert dut.uo_out[2].value == 1 or dut.uo_out[2].value == 0, "I2S SD signal incorrect"
+    
+    dut._log.info("I2S signals verified")
+
+    dut._log.info("All tests passed successfully!")

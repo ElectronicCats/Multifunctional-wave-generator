@@ -6,12 +6,12 @@ module tt_um_waves (
     input  wire [7:0] uio_in,   // IOs: Input path
     output wire [7:0] uio_out,  // IOs: Output path
     output wire [7:0] uio_oe,   // IOs: Enable path (active high: 0=input, 1=output)
-    input  wire       ena,      // will go high when the design is enabled
-    input  wire       clk,      // clock
-    input  wire       rst_n     // reset_n - low to reset
+    input  wire       ena,      // Will go high when the design is enabled
+    input  wire       clk,      // Clock
+    input  wire       rst_n     // Active-low reset
 );
 
-    // Signals from UART
+    // UART signals
     wire [5:0] freq_select;
     wire [2:0] wave_select;
     wire       white_noise_en;
@@ -33,114 +33,95 @@ module tt_um_waves (
     // Unused signals
     wire [6:0] unused_ui_in = ui_in[7:1];
 
-    // Clock divider and wave generation
-    reg [31:0] clk_div, clk_div_threshold;
-    reg clk_divided;
-    reg [7:0] selected_wave;
-    reg [7:0] white_noise_out;
+    // Clock divider threshold for frequency selection
+    reg [31:0] freq_divider;
 
-    // Wave generator outputs
-    reg [7:0] tri_wave_out, saw_wave_out, sqr_wave_out, sine_wave_out;
+    always @(*) begin
+    case (freq_select)
+        6'b000000: freq_divider = 32'd1915712;  // C2 (65.41 Hz)
+        6'b000001: freq_divider = 32'd1803586;  // C#2/Db2 (69.30 Hz)
+        6'b000010: freq_divider = 32'd1702624;  // D2 (73.42 Hz)
+        6'b000011: freq_divider = 32'd1607142;  // D#2/Eb2 (77.78 Hz)
+        6'b000100: freq_divider = 32'd1515152;  // E2 (82.41 Hz)
+        6'b000101: freq_divider = 32'd1431731;  // F2 (87.31 Hz)
+        6'b000110: freq_divider = 32'd1351351;  // F#2/Gb2 (92.50 Hz)
+        6'b000111: freq_divider = 32'd1275510;  // G2 (98.00 Hz)
+        6'b001000: freq_divider = 32'd1204819;  // G#2/Ab2 (103.83 Hz)
+        6'b001001: freq_divider = 32'd1136364;  // A2 (110.00 Hz)
+        6'b001010: freq_divider = 32'd1075268;  // A#2/Bb2 (116.54 Hz)
+        6'b001011: freq_divider = 32'd1017340;  // B2 (123.47 Hz)
+
+        // Octave 3
+        6'b001100: freq_divider = 32'd95786;    // C3 (130.81 Hz)
+        6'b001101: freq_divider = 32'd90180;    // C#3/Db3 (138.59 Hz)
+        6'b001110: freq_divider = 32'd85131;    // D3 (146.83 Hz)
+        6'b001111: freq_divider = 32'd80357;    // D#3/Eb3 (155.56 Hz)
+        6'b010000: freq_divider = 32'd75758;    // E3 (164.81 Hz)
+        6'b010001: freq_divider = 32'd71586;    // F3 (174.61 Hz)
+        6'b010010: freq_divider = 32'd67567;    // F#3/Gb3 (185.00 Hz)
+        6'b010011: freq_divider = 32'd63775;    // G3 (196.00 Hz)
+        6'b010100: freq_divider = 32'd60241;    // G#3/Ab3 (207.65 Hz)
+        6'b010101: freq_divider = 32'd56818;    // A3 (220.00 Hz)
+        6'b010110: freq_divider = 32'd53763;    // A#3/Bb3 (233.08 Hz)
+        6'b010111: freq_divider = 32'd50867;    // B3 (246.94 Hz)
+
+        // Octave 4
+        6'b011000: freq_divider = 32'd47878;    // C4 (261.63 Hz)
+        6'b011001: freq_divider = 32'd45090;    // C#4/Db4 (277.18 Hz)
+        6'b011010: freq_divider = 32'd42566;    // D4 (293.66 Hz)
+        6'b011011: freq_divider = 32'd40178;    // D#4/Eb4 (311.13 Hz)
+        6'b011100: freq_divider = 32'd37878;    // E4 (329.63 Hz)
+        6'b011101: freq_divider = 32'd35793;    // F4 (349.23 Hz)
+        6'b011110: freq_divider = 32'd33783;    // F#4/Gb4 (369.99 Hz)
+        6'b011111: freq_divider = 32'd31888;    // G4 (392.00 Hz)
+        6'b100000: freq_divider = 32'd30120;    // G#4/Ab4 (415.30 Hz)
+        6'b100001: freq_divider = 32'd28409;    // A4 (440.00 Hz)
+        6'b100010: freq_divider = 32'd26881;    // A#4/Bb4 (466.16 Hz)
+        6'b100011: freq_divider = 32'd25434;    // B4 (493.88 Hz)
+
+        // Octave 5
+        6'b100100: freq_divider = 32'd23939;    // C5 (523.25 Hz)
+        6'b100101: freq_divider = 32'd22545;    // C#5/Db5 (554.37 Hz)
+        6'b100110: freq_divider = 32'd21283;    // D5 (587.33 Hz)
+        6'b100111: freq_divider = 32'd20089;    // D#5/Eb5 (622.25 Hz)
+        6'b101000: freq_divider = 32'd18938;    // E5 (659.25 Hz)
+        6'b101001: freq_divider = 32'd17896;    // F5 (698.46 Hz)
+        6'b101010: freq_divider = 32'd16891;    // F#5/Gb5 (739.99 Hz)
+        6'b101011: freq_divider = 32'd15944;    // G5 (783.99 Hz)
+        6'b101100: freq_divider = 32'd15060;    // G#5/Ab5 (830.61 Hz)
+        6'b101101: freq_divider = 32'd14204;    // A5 (880.00 Hz)
+        6'b101110: freq_divider = 32'd13441;    // A#5/Bb5 (932.33 Hz)
+        6'b101111: freq_divider = 32'd12717;    // B5 (987.77 Hz)
+
+        // Octave 6
+        6'b110000: freq_divider = 32'd11969;    // C6 (1046.50 Hz)
+        6'b110001: freq_divider = 32'd11272;    // C#6/Db6 (1108.73 Hz)
+        6'b110010: freq_divider = 32'd10642;    // D6 (1174.66 Hz)
+        6'b110011: freq_divider = 32'd10044;    // D#6/Eb6 (1244.51 Hz)
+        6'b110100: freq_divider = 32'd9470;     // E6 (1318.51 Hz)
+        6'b110101: freq_divider = 32'd8948;     // F6 (1396.91 Hz)
+        6'b110110: freq_divider = 32'd8445;     // F#6/Gb6 (1479.98 Hz)
+        6'b110111: freq_divider = 32'd7972;     // G6 (1567.98 Hz)
+        6'b111000: freq_divider = 32'd7518;     // G#6/Ab6 (1661.22 Hz)
+        6'b111001: freq_divider = 32'd7090;     // A6 (1760.00 Hz)
+        6'b111010: freq_divider = 32'd6719;     // A#6/Bb6 (1864.66 Hz)
+        6'b111011: freq_divider = 32'd6358;     // B6 (1975.53 Hz)
+
+        default: freq_divider = 32'd284091; // Default to A4 (440 Hz)
+    endcase
+end
+
 
     // UART Receiver Instance
     uart_receiver uart_rx_inst (
         .clk(clk),
         .rst_n(rst_n),
-        .rx(ui_in[0]),  // Assuming RX is connected to ui_in[0]
-        .freq_select(freq_select),
+        .rx(ui_in[0]),  
+        .freq_select(freq_select),  
         .wave_select(wave_select),
         .white_noise_en(white_noise_en)
     );
 
-    // Clock Divider for Frequency Selection
-    always @(posedge clk) begin
-        if (!rst_n) begin
-            clk_div <= 32'd0;
-            clk_divided <= 1'b0;
-        end else if (clk_div_threshold != 32'd0) begin
-            if (clk_div >= clk_div_threshold) begin
-                clk_div <= 32'd0;
-                clk_divided <= ~clk_divided;
-            end else begin
-                clk_div <= clk_div + 1;
-            end
-        end
-    end
-
-    // Clock divider threshold selection based on `freq_select`
-    always @(*) begin
-        case (freq_select)
-            6'b000000: clk_div_threshold = 32'd1915712;  // C2 (65.41 Hz)
-            6'b000001: clk_div_threshold = 32'd1803586;  // C#2/Db2 (69.30 Hz)
-            6'b000010: clk_div_threshold = 32'd1702624;  // D2 (73.42 Hz)
-            6'b000011: clk_div_threshold = 32'd1607142;  // D#2/Eb2 (77.78 Hz)
-            6'b000100: clk_div_threshold = 32'd1515152;  // E2 (82.41 Hz)
-            6'b000101: clk_div_threshold = 32'd1431731;  // F2 (87.31 Hz)
-            6'b000110: clk_div_threshold = 32'd1351351;  // F#2/Gb2 (92.50 Hz)
-            6'b000111: clk_div_threshold = 32'd1275510;  // G2 (98.00 Hz)
-            6'b001000: clk_div_threshold = 32'd1204819;  // G#2/Ab2 (103.83 Hz)
-            6'b001001: clk_div_threshold = 32'd1136364;  // A2 (110.00 Hz)
-            6'b001010: clk_div_threshold = 32'd1075268;  // A#2/Bb2 (116.54 Hz)
-            6'b001011: clk_div_threshold = 32'd1017340;  // B2 (123.47 Hz)
-
-            // Octave 3
-            6'b001100: clk_div_threshold = 32'd95786;    // C3 (130.81 Hz)
-            6'b001101: clk_div_threshold = 32'd90180;    // C#3/Db3 (138.59 Hz)
-            6'b001110: clk_div_threshold = 32'd85131;    // D3 (146.83 Hz)
-            6'b001111: clk_div_threshold = 32'd80357;    // D#3/Eb3 (155.56 Hz)
-            6'b010000: clk_div_threshold = 32'd75758;    // E3 (164.81 Hz)
-            6'b010001: clk_div_threshold = 32'd71586;    // F3 (174.61 Hz)
-            6'b010010: clk_div_threshold = 32'd67567;    // F#3/Gb3 (185.00 Hz)
-            6'b010011: clk_div_threshold = 32'd63775;    // G3 (196.00 Hz)
-            6'b010100: clk_div_threshold = 32'd60241;    // G#3/Ab3 (207.65 Hz)
-            6'b010101: clk_div_threshold = 32'd56818;    // A3 (220.00 Hz)
-            6'b010110: clk_div_threshold = 32'd53763;    // A#3/Bb3 (233.08 Hz)
-            6'b010111: clk_div_threshold = 32'd50867;    // B3 (246.94 Hz)
-
-            // Octave 4
-            6'b011000: clk_div_threshold = 32'd47878;    // C4 (261.63 Hz)
-            6'b011001: clk_div_threshold = 32'd45090;    // C#4/Db4 (277.18 Hz)
-            6'b011010: clk_div_threshold = 32'd42566;    // D4 (293.66 Hz)
-            6'b011011: clk_div_threshold = 32'd40178;    // D#4/Eb4 (311.13 Hz)
-            6'b011100: clk_div_threshold = 32'd37878;    // E4 (329.63 Hz)
-            6'b011101: clk_div_threshold = 32'd35793;    // F4 (349.23 Hz)
-            6'b011110: clk_div_threshold = 32'd33783;    // F#4/Gb4 (369.99 Hz)
-            6'b011111: clk_div_threshold = 32'd31888;    // G4 (392.00 Hz)
-            6'b100000: clk_div_threshold = 32'd30120;    // G#4/Ab4 (415.30 Hz)
-            6'b100001: clk_div_threshold = 32'd28409;    // A4 (440.00 Hz)
-            6'b100010: clk_div_threshold = 32'd26881;    // A#4/Bb4 (466.16 Hz)
-            6'b100011: clk_div_threshold = 32'd25434;    // B4 (493.88 Hz)
-
-            // Octave 5
-            6'b100100: clk_div_threshold = 32'd23939;    // C5 (523.25 Hz)
-            6'b100101: clk_div_threshold = 32'd22545;    // C#5/Db5 (554.37 Hz)
-            6'b100110: clk_div_threshold = 32'd21283;    // D5 (587.33 Hz)
-            6'b100111: clk_div_threshold = 32'd20089;    // D#5/Eb5 (622.25 Hz)
-            6'b101000: clk_div_threshold = 32'd18938;    // E5 (659.25 Hz)
-            6'b101001: clk_div_threshold = 32'd17896;    // F5 (698.46 Hz)
-            6'b101010: clk_div_threshold = 32'd16891;    // F#5/Gb5 (739.99 Hz)
-            6'b101011: clk_div_threshold = 32'd15944;    // G5 (783.99 Hz)
-            6'b101100: clk_div_threshold = 32'd15060;    // G#5/Ab5 (830.61 Hz)
-            6'b101101: clk_div_threshold = 32'd14204;    // A5 (880.00 Hz)
-            6'b101110: clk_div_threshold = 32'd13441;    // A#5/Bb5 (932.33 Hz)
-            6'b101111: clk_div_threshold = 32'd12717;    // B5 (987.77 Hz)
-
-            // Octave 6
-            6'b110000: clk_div_threshold = 32'd11969;    // C6 (1046.50 Hz)
-            6'b110001: clk_div_threshold = 32'd11272;    // C#6/Db6 (1108.73 Hz)
-            6'b110010: clk_div_threshold = 32'd10642;    // D6 (1174.66 Hz)
-            6'b110011: clk_div_threshold = 32'd10044;    // D#6/Eb6 (1244.51 Hz)
-            6'b110100: clk_div_threshold = 32'd9470;     // E6 (1318.51 Hz)
-            6'b110101: clk_div_threshold = 32'd8948;     // F6 (1396.91 Hz)
-            6'b110110: clk_div_threshold = 32'd8445;     // F#6/Gb6 (1479.98 Hz)
-            6'b110111: clk_div_threshold = 32'd7972;     // G6 (1567.98 Hz)
-            6'b111000: clk_div_threshold = 32'd7518;     // G#6/Ab6 (1661.22 Hz)
-            6'b111001: clk_div_threshold = 32'd7090;     // A6 (1760.00 Hz)
-            6'b111010: clk_div_threshold = 32'd6719;     // A#6/Bb6 (1864.66 Hz)
-            6'b111011: clk_div_threshold = 32'd6358;     // B6 (1975.53 Hz)
-            default: clk_div_threshold = 32'd284091; // Default to A4 (440 Hz)
-        endcase
-    end
 
     // Instantiate encoders
     encoder #(.WIDTH(8), .INCREMENT(1)) attack_encoder (
@@ -164,39 +145,62 @@ module tt_um_waves (
         .value(rel), .ena(ena)
     );
 
-    // Wave generators and ADSR
+    // Wave generators with frequency control
+    wire [7:0] tri_wave_out, saw_wave_out, sqr_wave_out, sine_wave_out;
+
     triangular_wave_generator triangle_gen (
-        .clk(clk_divided), .rst_n(rst_n),
+        .clk(clk), .rst_n(rst_n),
+       .freq_select(freq_divider[15:0]),
         .wave_out(tri_wave_out), .ena(ena)
     );
     sawtooth_wave_generator saw_gen (
-        .clk(clk_divided), .rst_n(rst_n),
+        .clk(clk), .rst_n(rst_n),
+        .freq_select(freq_divider[15:0]),
         .wave_out(saw_wave_out), .ena(ena)
     );
     square_wave_generator sqr_gen (
-        .clk(clk_divided), .rst_n(rst_n),
+        .clk(clk), .rst_n(rst_n),
+        .freq_select(freq_divider[15:0]),
         .wave_out(sqr_wave_out), .ena(ena)
     );
     sine_wave_generator sine_gen (
-        .clk(clk_divided), .rst_n(rst_n),
+        .clk(clk), .rst_n(rst_n),
+        .freq_select(freq_divider[15:0]),
         .wave_out(sine_wave_out), .ena(ena)
     );
+
+    // ADSR Generator
     adsr_generator adsr_gen (
-        .clk(clk_divided), .rst_n(rst_n),
+        .clk(clk), .rst_n(rst_n),
         .attack(attack), .decay(decay),
         .sustain(sustain), .rel(rel),
         .amplitude(adsr_amplitude), .ena(ena)
     );
+  
+  // Instantiate Wave Generator
+    wave_generator wave_gen_inst (
+        .clk(clk),
+        .rst_n(rst_n),
+        .freq_select(freq_select),
+        .wave_select(wave_select),
+        .white_noise_en(white_noise_en),
+        .wave_out(wave_out)
+    );
+  
+  // Waveform Output
+    wire [7:0] wave_out;
 
     // White Noise Generator
-    always @(posedge clk_divided) begin
+    reg [7:0] white_noise_out;
+    always @(posedge clk) begin
         if (!rst_n)
             white_noise_out <= 8'b0;
         else
-            white_noise_out <= white_noise_out + 1;  // Example LFSR logic
+            white_noise_out <= white_noise_out + 1;  // Simple pseudo-random noise
     end
 
-    // Select the Wave
+    // Select the Waveform
+    reg [7:0] selected_wave;
     always @(*) begin
         case ({white_noise_en, wave_select})
             4'b1000: selected_wave = white_noise_out;   // White noise
@@ -212,10 +216,10 @@ module tt_um_waves (
     i2s_transmitter i2s_out (
         .clk(clk),
         .rst_n(rst_n),
-        .data((selected_wave * adsr_amplitude) >> 8),
-        .sck(uo_out[0]),
-        .ws(uo_out[1]),
-        .sd(uo_out[2]),
+        .data(wave_out),     // Send generated wave data
+        .sck(uo_out[0]),     // I2S Serial Clock
+        .ws(uo_out[1]),      // I2S Word Select
+        .sd(uo_out[2]),      // I2S Serial Data
         .ena(ena)
     );
 
@@ -242,27 +246,45 @@ module uart_receiver (
     reg [2:0] bit_count;       // Bit count (0-7 for 8 bits)
     reg receiving;             // UART receiving flag
     reg [1:0] state;           // State machine: 0 = idle, 1 = receiving, 2 = processing
-    wire start_bit;            // Detect start bit
-    wire stop_bit;             // Detect stop bit
 
     // State machine states
     localparam IDLE       = 2'b00;
     localparam RECEIVING  = 2'b01;
     localparam PROCESSING = 2'b10;
 
-    // Assign start and stop bit conditions
-    assign start_bit = (rx == 1'b0 && state == IDLE); // Falling edge indicates start bit
-    assign stop_bit  = (bit_count == 3'd7 && state == RECEIVING);
+    // Synchronize the RX signal to avoid metastability
+    reg rx_sync1, rx_sync2;
+    always @(posedge clk) begin
+        if (!rst_n) begin
+            rx_sync1 <= 1'b1;
+            rx_sync2 <= 1'b1;
+        end else begin
+            rx_sync1 <= rx;
+            rx_sync2 <= rx_sync1;
+        end
+    end
+
+    wire rx_stable = rx_sync2;
+
+    // Start bit detection (falling edge on rx_stable)
+    reg rx_last;
+    always @(posedge clk) begin
+        if (!rst_n)
+            rx_last <= 1'b1;
+        else
+            rx_last <= rx_stable;
+    end
+    wire start_bit = (rx_last == 1'b1 && rx_stable == 1'b0); // Falling edge detection
 
     always @(posedge clk) begin
         if (!rst_n) begin
-            // Reset todos los registros
+            // Reset all registers
             received_byte <= 8'd0;
             bit_count <= 3'd0;
             receiving <= 1'b0;
             freq_select <= 6'd0;
-            wave_select <= 3'b000;  // Por defecto, onda triangular
-            white_noise_en <= 1'b0; // Deshabilitar ruido blanco
+            wave_select <= 3'b000;  // Default: Triangle wave
+            white_noise_en <= 1'b0; // Disable white noise
             state <= IDLE;
         end else begin
             case (state)
@@ -276,9 +298,10 @@ module uart_receiver (
 
                 RECEIVING: begin
                     if (receiving) begin
-                        received_byte[bit_count] <= rx;
-                        bit_count <= bit_count + 1;
-                        if (stop_bit) begin
+                        received_byte[bit_count] <= rx_stable;
+                        if (bit_count < 3'd7) begin
+                            bit_count <= bit_count + 1;
+                        end else begin
                             receiving <= 1'b0;
                             state <= PROCESSING;
                         end
@@ -287,13 +310,26 @@ module uart_receiver (
 
                 PROCESSING: begin
                     case (received_byte)
-                        8'h4E: white_noise_en <= 1'b1;        // 'N' - Habilitar ruido blanco
-                        8'h46: white_noise_en <= 1'b0;        // 'F' - Deshabilitar ruido blanco
-                        8'h54: wave_select <= 3'b000;         // 'T' - Onda triangular
-                        8'h53: wave_select <= 3'b001;         // 'S' - Onda diente de sierra
-                        8'h51: wave_select <= 3'b010;         // 'Q' - Onda cuadrada
-                        8'h57: wave_select <= 3'b011;         // 'W' - Onda seno
-                        default: freq_select <= received_byte[5:0]; // Otros valores para frecuencia
+                        // White noise control
+                        8'h4E: white_noise_en <= 1'b1;        // 'N' - Enable white noise
+                        8'h46: white_noise_en <= 1'b0;        // 'F' - Disable white noise
+
+                        // Wave selection
+                        8'h54: wave_select <= 3'b000;         // 'T' - Triangle wave
+                        8'h53: wave_select <= 3'b001;         // 'S' - Sawtooth wave
+                        8'h51: wave_select <= 3'b010;         // 'Q' - Square wave
+                        8'h57: wave_select <= 3'b011;         // 'W' - Sine wave
+
+                        // Frequency selection (numbers '0'-'9' and letters 'A'-'Z')
+                        default: begin
+                            if (received_byte >= 8'h30 && received_byte <= 8'h39) begin
+                                // '0' to '9' -> Convert to 6-bit value (0-9)
+                                freq_select <= (received_byte[5:0] - 6'd48);  
+                            end else if (received_byte >= 8'h41 && received_byte <= 8'h5A) begin
+                                // 'A' to 'Z' -> Convert to 6-bit value (10-35)
+                                freq_select <= (received_byte[5:0] - 6'd55);  
+                            end
+                        end
                     endcase
                     state <= IDLE;
                 end
@@ -305,6 +341,54 @@ module uart_receiver (
 endmodule
 
 
+module wave_generator (
+    input wire clk,               // System clock
+    input wire rst_n,             // Active-low reset
+    input wire [5:0] freq_select, // Frequency selection
+    input wire [2:0] wave_select, // Wave type selection
+    input wire white_noise_en,    // White noise enable
+    output reg [7:0] wave_out     // Wave output
+);
+
+    reg [15:0] phase_acc;  // Phase accumulator
+    reg [7:0] sine_table [0:15]; // Sine wave lookup table
+    reg [15:0] lfsr;       // White noise LFSR
+
+    initial begin
+        sine_table[0]  = 8'd128; sine_table[1]  = 8'd176;
+        sine_table[2]  = 8'd218; sine_table[3]  = 8'd246;
+        sine_table[4]  = 8'd255; sine_table[5]  = 8'd246;
+        sine_table[6]  = 8'd218; sine_table[7]  = 8'd176;
+        sine_table[8]  = 8'd128; sine_table[9]  = 8'd80;
+        sine_table[10] = 8'd38;  sine_table[11] = 8'd10;
+        sine_table[12] = 8'd0;   sine_table[13] = 8'd10;
+        sine_table[14] = 8'd38;  sine_table[15] = 8'd80;
+    end
+
+    always @(posedge clk) begin
+        if (!rst_n) begin
+            phase_acc <= 0;
+            wave_out <= 0;
+            lfsr <= 16'hACE1;
+        end else begin
+            // Frequency control (increment phase accumulator based on freq_select)
+            phase_acc <= phase_acc + {freq_select, 10'b0};
+
+            case (wave_select)
+                3'b000: wave_out <= phase_acc[15] ? (255 - phase_acc[7:0]) : phase_acc[7:0];  // Triangle
+                3'b001: wave_out <= phase_acc[7:0];  // Sawtooth
+                3'b010: wave_out <= phase_acc[15] ? 8'd255 : 8'd0;  // Square
+                3'b011: wave_out <= sine_table[phase_acc[15:12]];  // Sine
+                default: wave_out <= 8'd0;
+            endcase
+
+            // White noise (LFSR - 16-bit maximal length shift register)
+            lfsr <= {lfsr[14:0], lfsr[15] ^ lfsr[13] ^ lfsr[12] ^ lfsr[10]};
+            if (white_noise_en) wave_out <= wave_out ^ lfsr[7:0]; // Add noise
+        end
+    end
+
+endmodule
 
 
 
