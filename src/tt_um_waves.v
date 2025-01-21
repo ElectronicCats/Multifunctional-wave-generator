@@ -34,7 +34,7 @@ module tt_um_waves (
     wire [6:0] unused_ui_in = ui_in[7:1];
 
     // Clock divider threshold for frequency selection
-    reg [15:0] freq_divider;
+    reg [31:0] freq_divider;
 
     always @(*) begin
     case (freq_select)
