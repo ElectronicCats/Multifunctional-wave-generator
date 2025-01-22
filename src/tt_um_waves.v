@@ -233,26 +233,31 @@ end
   assign scaled_wave = (selected_wave * adsr_amplitude) >> 8;
   
 
-    // I2S Output Module
+    // Declare wires for I2S outputs
+    wire i2s_sck, i2s_ws, i2s_sd;
+
+    // Instantiate I2S transmitter correctly
     i2s_transmitter i2s_out (
-    .clk(clk),
-    .rst_n(rst_n),
-    .data(scaled_wave),  // ADSR amplitude scaling
-    .sck(uo_out[0]),
-    .ws(uo_out[1]),
-    .sd(uo_out[2]),
-    .ena(ena)
-);
+       .clk(clk),
+       .rst_n(rst_n),
+       .data(scaled_wave),
+       .sck(i2s_sck),
+       .ws(i2s_ws),
+       .sd(i2s_sd),
+       .ena(ena)
+   );
+
+    // Explicitly assign I2S outputs to `uo_out`
+    assign uo_out[0] = i2s_sck;
+    assign uo_out[1] = i2s_ws;
+    assign uo_out[2] = i2s_sd;
+    assign uo_out[7:3] = 5'b00000;  // Ensure upper bits are not floating
+
 
 
     // Assign Outputs
-    assign uo_out[7:3] = 5'b0; // Remaining unused bits
     assign uio_out = 8'b0;     // Unused IOs
     assign uio_oe = 8'b0;      // All IOs set to input mode
-    assign uo_out[7:3] = 5'b00000;  // Ensure upper bits are driven
-    assign uo_out[0] = i2s_out.sck; // I2S clock
-    assign uo_out[1] = i2s_out.ws;  // I2S word select
-    assign uo_out[2] = i2s_out.sd;  // I2S serial data
 
 
 endmodule
