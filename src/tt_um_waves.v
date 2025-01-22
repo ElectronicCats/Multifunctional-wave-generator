@@ -46,6 +46,8 @@ module tt_um_waves (
         clk_div <= clk_div + 1;
     end
 end
+  
+  wire unused_freq_bits = |freq_divider[31:16];
 
     always @(*) begin
     case (freq_select)
@@ -214,15 +216,17 @@ end
     reg [7:0] selected_wave;
 
     always @(*) begin
-       case ({white_noise_en, wave_select})
-           4'b1000: selected_wave = 8'hFF;           // White noise
-           4'b0001: selected_wave = tri_wave_out;    // Triangle wave
-           4'b0010: selected_wave = saw_wave_out;    // Sawtooth wave
-           4'b0011: selected_wave = sqr_wave_out;    // Square wave
-           4'b0100: selected_wave = sine_wave_out;   // Sine wave
-           default: selected_wave = 8'd0;
-        endcase
-    end
+      
+    case ({white_noise_en, wave_select})
+        4'b1000: selected_wave = 8'hFF;           // White noise
+        4'b0001: selected_wave = tri_wave_out;    // Triangle wave
+        4'b0010: selected_wave = saw_wave_out;    // Sawtooth wave
+        4'b0011: selected_wave = sqr_wave_out;    // Square wave
+        4'b0100: selected_wave = sine_wave_out;   // Sine wave
+        default: selected_wave = 8'd0;
+    endcase
+end
+
 
   
   assign scaled_wave = (selected_wave * adsr_amplitude) >> 8;
