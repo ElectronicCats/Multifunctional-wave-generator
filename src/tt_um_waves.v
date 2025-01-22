@@ -202,7 +202,8 @@ end
   
   // Waveform Output
     wire [7:0] wave_out;
-  wire [7:0] scaled_wave;
+    assign wave_out = selected_wave; // Ensure wave_out is driven
+    wire [7:0] scaled_wave;
 
     // White Noise Generator
     reg [7:0] white_noise_out;
@@ -248,6 +249,11 @@ end
     assign uo_out[7:3] = 5'b0; // Remaining unused bits
     assign uio_out = 8'b0;     // Unused IOs
     assign uio_oe = 8'b0;      // All IOs set to input mode
+    assign uo_out[7:3] = 5'b00000;  // Ensure upper bits are driven
+    assign uo_out[0] = i2s_out.sck; // I2S clock
+    assign uo_out[1] = i2s_out.ws;  // I2S word select
+    assign uo_out[2] = i2s_out.sd;  // I2S serial data
+
 
 endmodule
 
