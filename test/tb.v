@@ -10,14 +10,15 @@ module tb;
     wire [7:0] uo_out; // Dedicated outputs
     wire [7:0] uio_out;
     wire [7:0] uio_oe;
+    
+    reg rx;  // UART RX line
+
+    // Assign UART RX to ui_in[0]
+    assign ui_in[0] = rx;
 
     // UART parameters
     parameter CLK_PERIOD = 40;     // 25 MHz clock period
     parameter BIT_PERIOD = 10417;  // 9600 baud (1/9600 seconds)
-
-    // Assign UART RX to ui_in[0]
-    assign ui_in[0] = rx;
-    reg rx;  // UART RX line
 
     // Instantiate the module under test (MUT)
     tt_um_waves uut (
@@ -43,7 +44,7 @@ module tb;
             rx = 0;
             #(BIT_PERIOD);
 
-            // Data bits
+            // Data bits (LSB first)
             for (i = 0; i < 8; i = i + 1) begin
                 rx = byte[i];
                 #(BIT_PERIOD);
@@ -66,45 +67,52 @@ module tb;
         // Reset pulse
         #100;
         rst_n = 1;
+        #50000;
 
         // UART Commands - Testing Waveform Selection
+        $display("Testing waveform selection...");
 
-        // Select TRIANGLE Wave ('T')
-        send_uart_byte(8'h54);  // ASCII 'T'
+        send_uart_byte(8'h54);  // 'T' -> Triangle Wave
         #50000;
-        $display("Triangle wave selected, uo_out = %b", uo_out);
+        $display("Triangle wave selected, I2S SD = %b", uo_out[2]);
 
-        // Select SAWTOOTH Wave ('S')
-        send_uart_byte(8'h53);  // ASCII 'S'
+        send_uart_byte(8'h53);  // 'S' -> Sawtooth Wave
         #50000;
-        $display("Sawtooth wave selected, uo_out = %b", uo_out);
+        $display("Sawtooth wave selected, I2S SD = %b", uo_out[2]);
 
-        // Select SQUARE Wave ('Q')
-        send_uart_byte(8'h51);  // ASCII 'Q'
+        send_uart_byte(8'h51);  // 'Q' -> Square Wave
         #50000;
-        $display("Square wave selected, uo_out = %b", uo_out);
+        $display("Square wave selected, I2S SD = %b", uo_out[2]);
 
-        // Select SINE Wave ('W')
-        send_uart_byte(8'h57);  // ASCII 'W'
+        send_uart_byte(8'h57);  // 'W' -> Sine Wave
         #50000;
-        $display("Sine wave selected, uo_out = %b", uo_out);
+        $display("Sine wave selected, I2S SD = %b", uo_out[2]);
 
-        // Enable WHITE NOISE ('N')
-        send_uart_byte(8'h4E);  // ASCII 'N'
+        // Test White Noise Enable/Disable
+        send_uart_byte(8'h4E);  // 'N' -> Enable White Noise
         #50000;
-        $display("White noise enabled, uo_out = %b", uo_out);
+        $display("White noise enabled, I2S SD = %b", uo_out[2]);
 
-        // Disable WHITE NOISE ('F')
-        send_uart_byte(8'h46);  // ASCII 'F'
+        send_uart_byte(8'h46);  // 'F' -> Disable White Noise
         #50000;
-        $display("White noise disabled, uo_out = %b", uo_out);
+        $display("White noise disabled, I2S SD = %b", uo_out[2]);
 
-        // Select Frequency 'A' (First test frequency)
-        send_uart_byte(8'h41);  // ASCII 'A'
+        // Test Frequency Selection
+        $display("Testing frequency selection...");
+
+        send_uart_byte(8'h41);  // 'A' -> Frequency Selection
         #50000;
-        $display("Frequency A selected, uo_out = %b", uo_out);
+        $display("Frequency A selected, I2S SCK = %b", uo_out[0]);
 
-        // Finish simulation
+        send_uart_byte(8'h35);  // '5' -> Another frequency selection
+        #50000;
+        $display("Frequency 5 selected, I2S SCK = %b", uo_out[0]);
+
+        // I2S Signal Verification
+        $display("Verifying I2S output...");
+        $display("I2S SCK: %b, WS: %b, SD: %b", uo_out[0], uo_out[1], uo_out[2]);
+
+        // End simulation
         $finish;
     end
 endmodule
