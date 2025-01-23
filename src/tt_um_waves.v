@@ -201,7 +201,7 @@ end
     );
   
   // Waveform Output
-    wire [7:0] wave_out;
+    wire unused_wave_out = |wave_out;  // Ensure wave_out is used somewhere
     assign wave_out = selected_wave; // Ensure wave_out is driven
     wire [7:0] scaled_wave;
 
