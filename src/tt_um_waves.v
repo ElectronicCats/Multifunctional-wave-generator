@@ -16,8 +16,13 @@ module tt_um_waves (
     wire [2:0] wave_select;
     wire       white_noise_en;
 
+    // Waveform Output
     wire [7:0] wave_out;
-    assign wave_out = selected_wave;   
+    reg [7:0] selected_wave;
+    assign wave_out = selected_wave;  
+
+    assign wave_out = selected_wave; // Ensure wave_out is driven
+    wire [7:0] scaled_wave;
 
     // ADSR encoder signals from uio_in
     wire encoder_a_attack = uio_in[0];
@@ -200,12 +205,12 @@ end
         .freq_select(freq_select),
         .wave_select(wave_select),
         .white_noise_en(white_noise_en),
-        .wave_out(selected_wave)
+        .wave_out(wave_gen_output)
     );
-  
-  // Waveform Output
-    assign wave_out = selected_wave; // Ensure wave_out is driven
-    wire [7:0] scaled_wave;
+
+    always @(*) begin
+    selected_wave = (white_noise_en) ? 8'hFF : wave_gen_output;
+    end
 
     // White Noise Generator
     reg [7:0] white_noise_out;
@@ -216,25 +221,23 @@ end
             white_noise_out <= white_noise_out + 1;  // Simple pseudo-random noise
     end
 
-    reg [7:0] selected_wave;
 
     always @(*) begin
-      
-    case ({white_noise_en, wave_select})
-        4'b1000: selected_wave = 8'hFF;           // White noise
-        4'b0001: selected_wave = tri_wave_out;    // Triangle wave
-        4'b0010: selected_wave = saw_wave_out;    // Sawtooth wave
-        4'b0011: selected_wave = sqr_wave_out;    // Square wave
-        4'b0100: selected_wave = sine_wave_out;   // Sine wave
-        default: selected_wave = 8'd0;
-    endcase
-end
+    selected_wave = (white_noise_en) ? 8'hFF : 
+                    (wave_select == 3'b001) ? tri_wave_out :
+                    (wave_select == 3'b010) ? saw_wave_out :
+                    (wave_select == 3'b011) ? sqr_wave_out :
+                    (wave_select == 3'b100) ? sine_wave_out :
+                    8'd0;  
+    end
+
+
+    always @(*) begin
+    scaled_wave = (selected_wave * adsr_amplitude) >> 8;
+    end
 
 
   
-  assign scaled_wave = (selected_wave * adsr_amplitude) >> 8;
-  
-
     // Declare wires for I2S outputs
     wire i2s_sck, i2s_ws, i2s_sd;
 
