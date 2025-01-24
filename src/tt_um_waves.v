@@ -16,6 +16,9 @@ module tt_um_waves (
     wire [2:0] wave_select;
     wire       white_noise_en;
 
+    wire [7:0] wave_out;
+    assign wave_out = selected_wave;   
+
     // ADSR encoder signals from uio_in
     wire encoder_a_attack = uio_in[0];
     wire encoder_b_attack = uio_in[1];
@@ -201,7 +204,6 @@ end
     );
   
   // Waveform Output
-    wire unused_wave_out = |wave_out;  // Ensure wave_out is used somewhere
     assign wave_out = selected_wave; // Ensure wave_out is driven
     wire [7:0] scaled_wave;
 
