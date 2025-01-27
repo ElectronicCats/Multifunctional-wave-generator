@@ -15,6 +15,7 @@ module tt_um_waves (
     wire [5:0] freq_select;
     wire [2:0] wave_select;
     wire       white_noise_en;
+    wire unused_ui_in = |ui_in[7:1];
 
     // ADSR Control
     wire [7:0] attack, decay, sustain, rel;
@@ -195,6 +196,15 @@ white_noise_generator noise_gen_inst (
     .noise_out(noise_out),
     .ena(white_noise_en)  // Enable when white noise is selected
 );
+
+    
+    // Select Waveform Output
+    wire [7:0] wave_gen_output;
+    assign wave_gen_output = (wave_select == 3'b000) ? tri_wave_out :
+                             (wave_select == 3'b001) ? saw_wave_out :
+                             (wave_select == 3'b010) ? sqr_wave_out :
+                             (wave_select == 3'b011) ? sine_wave_out :
+                             8'd0;
 
     // Select Waveform (Using `noise_out` instead of manually generating noise)
     wire [7:0] selected_wave;
