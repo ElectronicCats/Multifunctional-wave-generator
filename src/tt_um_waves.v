@@ -216,10 +216,9 @@ white_noise_generator noise_gen_inst (
     assign selected_wave = (white_noise_en) ? noise_out : wave_gen_output;
 
     // Apply ADSR Envelope
-    reg [7:0] scaled_wave;
-    always @(*) begin
-        scaled_wave = (selected_wave * adsr_amplitude) >> 8;
-    end
+    wire [7:0] scaled_wave;
+    assign scaled_wave = (selected_wave * adsr_amplitude) >> 8;
+
 
     // I2S Output
     wire i2s_sck, i2s_ws, i2s_sd;
