@@ -11,54 +11,35 @@ module tt_um_waves (
     input  wire       rst_n     // Active-low reset
 );
 
-    // UART signals
+    // UART Signals
     wire [5:0] freq_select;
     wire [2:0] wave_select;
     wire       white_noise_en;
 
-    // Waveform Output
-    wire [7:0] wave_out;
-    reg [7:0] selected_wave;
-    assign wave_out = selected_wave;  
-
-    assign wave_out = selected_wave; // Ensure wave_out is driven
-    wire [7:0] scaled_wave;
-
-    // ADSR encoder signals from uio_in
-    wire encoder_a_attack = uio_in[0];
-    wire encoder_b_attack = uio_in[1];
-    wire encoder_a_decay  = uio_in[2];
-    wire encoder_b_decay  = uio_in[3];
-    wire encoder_a_sustain = uio_in[4];
-    wire encoder_b_sustain = uio_in[5];
-    wire encoder_a_release = uio_in[6];
-    wire encoder_b_release = uio_in[7];
-
-    // Control values from ADSR
+    // ADSR Control
     wire [7:0] attack, decay, sustain, rel;
     wire [7:0] adsr_amplitude;
 
-    // Unused signals
-    wire [6:0] unused_ui_in = ui_in[7:1];
+    // Frequency Divider
+    reg [31:0] freq_divider;
+    reg [31:0] clk_div;
 
-    // Clock divider threshold for frequency selection
-  reg [31:0] freq_divider;
-  reg [31:0] clk_div;
-  
-  always @(posedge clk) begin
-    if (!rst_n) begin
-        clk_div <= 32'd0;
-    end else if (clk_div >= freq_divider) begin 
-        clk_div <= 32'd0;
-    end else begin
-        clk_div <= clk_div + 1;
+    always @(posedge clk) begin
+        if (!rst_n) begin
+            clk_div <= 32'd0;
+        end else if (clk_div >= freq_divider) begin 
+            clk_div <= 32'd0;
+        end else begin
+            clk_div <= clk_div + 1;
+        end
     end
-end
-  
-  wire unused_freq_bits = |freq_divider[31:16];
 
+    // Unused signals to suppress warnings
+    wire unused_freq_bits = |freq_divider[31:16];
+
+    // Frequency Table
     always @(*) begin
-    case (freq_select)
+        case (freq_select)
         6'b000000: freq_divider = 32'd1915712;  // C2 (65.41 Hz)
         6'b000001: freq_divider = 32'd1803586;  // C#2/Db2 (69.30 Hz)
         6'b000010: freq_divider = 32'd1702624;  // D2 (73.42 Hz)
@@ -127,13 +108,11 @@ end
         6'b111001: freq_divider = 32'd7090;     // A6 (1760.00 Hz)
         6'b111010: freq_divider = 32'd6719;     // A#6/Bb6 (1864.66 Hz)
         6'b111011: freq_divider = 32'd6358;     // B6 (1975.53 Hz)
-
         default: freq_divider = 32'd284091; // Default to A4 (440 Hz)
-    endcase
-end
+        endcase
+    end
 
-
-    // UART Receiver Instance
+    // UART Receiver
     uart_receiver uart_rx_inst (
         .clk(clk),
         .rst_n(rst_n),
@@ -143,30 +122,29 @@ end
         .white_noise_en(white_noise_en)
     );
 
-
-    // Instantiate encoders
+    // Encoders for ADSR
     encoder #(.WIDTH(8), .INCREMENT(1)) attack_encoder (
         .clk(clk), .rst_n(rst_n),
-        .a(encoder_a_attack), .b(encoder_b_attack),
+        .a(uio_in[0]), .b(uio_in[1]),
         .value(attack), .ena(ena)
     );
     encoder #(.WIDTH(8), .INCREMENT(1)) decay_encoder (
         .clk(clk), .rst_n(rst_n),
-        .a(encoder_a_decay), .b(encoder_b_decay),
+        .a(uio_in[2]), .b(uio_in[3]),
         .value(decay), .ena(ena)
     );
     encoder #(.WIDTH(8), .INCREMENT(1)) sustain_encoder (
         .clk(clk), .rst_n(rst_n),
-        .a(encoder_a_sustain), .b(encoder_b_sustain),
+        .a(uio_in[4]), .b(uio_in[5]),
         .value(sustain), .ena(ena)
     );
     encoder #(.WIDTH(8), .INCREMENT(1)) release_encoder (
         .clk(clk), .rst_n(rst_n),
-        .a(encoder_a_release), .b(encoder_b_release),
+        .a(uio_in[6]), .b(uio_in[7]),
         .value(rel), .ena(ena)
     );
 
-    // Wave generators with frequency control
+        // Wave generators with frequency control
     wire [7:0] tri_wave_out, saw_wave_out, sqr_wave_out, sine_wave_out;
 
     triangular_wave_generator triangle_gen (
@@ -190,58 +168,45 @@ end
         .wave_out(sine_wave_out), .ena(ena)
     );
 
-    // ADSR Generator
+        // ADSR Generator
     adsr_generator adsr_gen (
         .clk(clk), .rst_n(rst_n),
         .attack(attack), .decay(decay),
         .sustain(sustain), .rel(rel),
         .amplitude(adsr_amplitude), .ena(ena)
     );
-  
-  // Instantiate Wave Generator
+
+    // Wave Generator 
+    wire [7:0] wave_gen_output;
     wave_generator wave_gen_inst (
-        .clk(clk),
-        .rst_n(rst_n),
-        .freq_select(freq_select),
-        .wave_select(wave_select),
-        .white_noise_en(white_noise_en),
+       .clk(clk),
+       .rst_n(rst_n),
+       .freq_select(freq_select),
+       .wave_select(wave_select),
+       .white_noise_en(white_noise_en),
         .wave_out(wave_gen_output)
-    );
+);
 
-    always @(*) begin
-    selected_wave = (white_noise_en) ? 8'hFF : wave_gen_output;
-    end
+// White Noise Generator Instance
+wire [7:0] noise_out;
+white_noise_generator noise_gen_inst (
+    .clk(clk),
+    .rst_n(rst_n),
+    .noise_out(noise_out),
+    .ena(white_noise_en)  // Enable when white noise is selected
+);
 
-    // White Noise Generator
-    reg [7:0] white_noise_out;
-    always @(posedge clk) begin
-        if (!rst_n)
-            white_noise_out <= 8'b0;
-        else
-            white_noise_out <= white_noise_out + 1;  // Simple pseudo-random noise
-    end
+    // Select Waveform (Using `noise_out` instead of manually generating noise)
+    wire [7:0] selected_wave;
+    assign selected_wave = (white_noise_en) ? noise_out : wave_gen_output;
 
+    // Apply ADSR Envelope
+    wire [7:0] scaled_wave;
+    assign scaled_wave = (selected_wave * adsr_amplitude) >> 8;
 
-    always @(*) begin
-    selected_wave = (white_noise_en) ? 8'hFF : 
-                    (wave_select == 3'b001) ? tri_wave_out :
-                    (wave_select == 3'b010) ? saw_wave_out :
-                    (wave_select == 3'b011) ? sqr_wave_out :
-                    (wave_select == 3'b100) ? sine_wave_out :
-                    8'd0;  
-    end
-
-
-    always @(*) begin
-    scaled_wave = (selected_wave * adsr_amplitude) >> 8;
-    end
-
-
-  
-    // Declare wires for I2S outputs
+    // I2S Output
     wire i2s_sck, i2s_ws, i2s_sd;
 
-    // Instantiate I2S transmitter correctly
     i2s_transmitter i2s_out (
        .clk(clk),
        .rst_n(rst_n),
@@ -250,24 +215,19 @@ end
        .ws(i2s_ws),
        .sd(i2s_sd),
        .ena(ena)
-   );
+    );
 
-    // Explicitly assign I2S outputs to `uo_out`
+    // Assign I2S Outputs to `uo_out`
     assign uo_out[0] = i2s_sck;
     assign uo_out[1] = i2s_ws;
     assign uo_out[2] = i2s_sd;
     assign uo_out[7:3] = 5'b00000;  // Ensure upper bits are not floating
 
-
-
     // Assign Outputs
-    assign uio_out = 8'b0;     // Unused IOs
-    assign uio_oe = 8'b0;      // All IOs set to input mode
-
+    assign uio_out = 8'b0;     
+    assign uio_oe = 8'b0;      
 
 endmodule
-
-
 
 
 module uart_receiver (

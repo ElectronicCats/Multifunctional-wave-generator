@@ -10,7 +10,7 @@ async def uart_send(dut, data):
 
     # Start bit (low)
     dut.ui_in.value = 0
-    await Timer(104_167, units="ns")  # Assuming 9600 baud (1/9600 = 104.167μs per bit)
+    await Timer(104_167, units="ns")  # 9600 baud rate (1 bit = 104.167µs)
 
     # Send 8 data bits (LSB first)
     for i in range(8):
@@ -21,25 +21,25 @@ async def uart_send(dut, data):
     dut.ui_in.value = 1
     await Timer(104_167, units="ns")
 
-    # Wait a bit before sending next byte
-    await Timer(1_000_000, units="ns")  # Longer delay to ensure processing
+    # Wait before next command
+    await Timer(1_000_000, units="ns")  # 1 ms delay for processing
 
 @cocotb.test()
-async def test_uart_waveform(dut):
-    """ Test UART commands and verify waveform selection & I2S output """
+async def test_waveform_generation(dut):
+    """ Test UART commands, waveform selection, and I2S output verification. """
 
-    # Start clock
+    # Start clock (10ns period → 100 MHz)
     cocotb.start_soon(Clock(dut.clk, 10, units="ns").start())
 
-    # Reset
+    # Reset DUT
     dut.rst_n.value = 0
     await ClockCycles(dut.clk, 10)
     dut.rst_n.value = 1
-    dut.ena.value = 1  # Enable the module
+    dut.ena.value = 1  # Enable module
 
     dut._log.info("Reset complete")
 
-    # Test UART: Select different waveforms
+    # Test UART: Select different waveforms and verify I2S output changes
     wave_commands = {
         'T': "Triangle",
         'S': "Sawtooth",
@@ -76,7 +76,7 @@ async def test_uart_waveform(dut):
 
         assert prev_sck != new_sck, f"I2S SCK signal did not change after setting frequency {i}"
 
-    # Test UART: Set white noise ON ('N') and OFF ('F')
+    # Test UART: Enable White Noise ('N') and Disable ('F')
     await uart_send(dut, ord('N'))
     await ClockCycles(dut.clk, 500)
 
