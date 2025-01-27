@@ -178,7 +178,7 @@ module tt_um_waves (
     );
 
     // Wave Generator 
-    wire [7:0] wave_gen_output;
+    //wire [7:0] wave_gen_output;
     wave_generator wave_gen_inst (
        .clk(clk),
        .rst_n(rst_n),
@@ -194,25 +194,32 @@ white_noise_generator noise_gen_inst (
     .clk(clk),
     .rst_n(rst_n),
     .noise_out(noise_out),
-    .ena(white_noise_en)  // Enable when white noise is selected
+    .ena(white_noise_en & ena)  // Enable when white noise is selected
 );
 
     
     // Select Waveform Output
     //wire [7:0] wave_gen_output;
-    assign wave_gen_output = (wave_select == 3'b000) ? tri_wave_out :
-                             (wave_select == 3'b001) ? saw_wave_out :
-                             (wave_select == 3'b010) ? sqr_wave_out :
-                             (wave_select == 3'b011) ? sine_wave_out :
-                             8'd0;
+    reg [7:0] wave_gen_output;
+    always @(*) begin
+        case (wave_select)
+            3'b000: wave_gen_output = tri_wave_out;
+            3'b001: wave_gen_output = saw_wave_out;
+            3'b010: wave_gen_output = sqr_wave_out;
+            3'b011: wave_gen_output = sine_wave_out;
+            default: wave_gen_output = 8'd0;
+        endcase
+    end
 
-    // Select Waveform (Using `noise_out` instead of manually generating noise)
+    // Select Waveform
     wire [7:0] selected_wave;
     assign selected_wave = (white_noise_en) ? noise_out : wave_gen_output;
 
     // Apply ADSR Envelope
-    wire [7:0] scaled_wave;
-    assign scaled_wave = (selected_wave * adsr_amplitude) >> 8;
+    reg [7:0] scaled_wave;
+    always @(*) begin
+        scaled_wave = (selected_wave * adsr_amplitude) >> 8;
+    end
 
     // I2S Output
     wire i2s_sck, i2s_ws, i2s_sd;
@@ -236,7 +243,6 @@ white_noise_generator noise_gen_inst (
     // Assign Outputs
     assign uio_out = 8'b0;     
     assign uio_oe = 8'b0;      
-
 endmodule
 
 
