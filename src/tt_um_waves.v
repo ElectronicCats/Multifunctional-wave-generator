@@ -199,7 +199,7 @@ white_noise_generator noise_gen_inst (
 
     
     // Select Waveform Output
-    wire [7:0] wave_gen_output;
+    //wire [7:0] wave_gen_output;
     assign wave_gen_output = (wave_select == 3'b000) ? tri_wave_out :
                              (wave_select == 3'b001) ? saw_wave_out :
                              (wave_select == 3'b010) ? sqr_wave_out :
