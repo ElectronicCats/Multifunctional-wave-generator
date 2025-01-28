@@ -38,7 +38,7 @@ module tt_um_waves (
     end
 
     // Unused signals to suppress warnings
-    wire unused_freq_bits = |freq_divider[31:16];
+    //wire unused_freq_bits = |freq_divider[31:16];
 
     // Frequency Table
     always @(*) begin
