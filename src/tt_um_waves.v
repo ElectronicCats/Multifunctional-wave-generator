@@ -25,6 +25,8 @@ module tt_um_waves (
     reg [31:0] freq_divider;
     reg [31:0] clk_div;
 
+    reg [7:0] wave_gen_output;
+
     always @(posedge clk) begin
         if (!rst_n) begin
             clk_div <= 32'd0;
@@ -178,7 +180,6 @@ module tt_um_waves (
     );
 
     // Wave Generator 
-    //wire [7:0] wave_gen_output;
     wave_generator wave_gen_inst (
        .clk(clk),
        .rst_n(rst_n),
@@ -199,18 +200,19 @@ white_noise_generator noise_gen_inst (
 
     
     // Select Waveform Output
-    //wire [7:0] wave_gen_output;
-    reg [7:0] wave_gen_output;
-    always @(*) begin
+    always @(posedge clk) begin
+    if (!rst_n)
+        wave_gen_output <= 8'd0;
+    else begin
         case (wave_select)
-            3'b000: wave_gen_output = tri_wave_out;
-            3'b001: wave_gen_output = saw_wave_out;
-            3'b010: wave_gen_output = sqr_wave_out;
-            3'b011: wave_gen_output = sine_wave_out;
-            default: wave_gen_output = 8'd0;
+            3'b000: wave_gen_output <= tri_wave_out;
+            3'b001: wave_gen_output <= saw_wave_out;
+            3'b010: wave_gen_output <= sqr_wave_out;
+            3'b011: wave_gen_output <= sine_wave_out;
+            default: wave_gen_output <= 8'd0;
         endcase
     end
-
+end
     // Select Waveform
     wire [7:0] selected_wave;
     assign selected_wave = (white_noise_en) ? noise_out : wave_gen_output;
@@ -218,7 +220,6 @@ white_noise_generator noise_gen_inst (
     // Apply ADSR Envelope
     wire [7:0] scaled_wave;
     assign scaled_wave = (selected_wave * adsr_amplitude) >> 8;
-
 
     // I2S Output
     wire i2s_sck, i2s_ws, i2s_sd;
