@@ -180,14 +180,14 @@ module tt_um_waves (
     );
 
     // Wave Generator 
-    wave_generator wave_gen_inst (
+    /*wave_generator wave_gen_inst (
        .clk(clk),
        .rst_n(rst_n),
        .freq_select(freq_select),
        .wave_select(wave_select),
        .white_noise_en(white_noise_en),
         .wave_out(wave_gen_output)
-);
+);*/
 
 // White Noise Generator Instance
 wire [7:0] noise_out;
@@ -219,7 +219,13 @@ end
 
     // Apply ADSR Envelope
     wire [7:0] scaled_wave;
-    assign scaled_wave = (selected_wave * adsr_amplitude) >> 8;
+    always @(posedge clk) begin
+    if (!rst_n)
+        scaled_wave <= 8'd0;
+    else
+        scaled_wave <= (selected_wave * adsr_amplitude) >> 8;
+    end
+
 
     // I2S Output
     wire i2s_sck, i2s_ws, i2s_sd;
@@ -354,7 +360,7 @@ module uart_receiver (
 endmodule
 
 
-module wave_generator (
+/*module wave_generator (
     input wire clk,               // System clock
     input wire rst_n,             // Active-low reset
     input wire [5:0] freq_select, // Frequency selection
@@ -401,7 +407,7 @@ module wave_generator (
         end
     end
 
-endmodule
+endmodule*/
 
 
 
@@ -959,6 +965,3 @@ module encoder #(
         end
     end
 endmodule
-
-
-
