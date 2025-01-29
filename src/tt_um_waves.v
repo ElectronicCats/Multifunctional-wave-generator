@@ -23,11 +23,26 @@ module tt_um_waves (
 
     // Frequency Divider
     reg [31:0] freq_divider;
-    //reg [31:0] clk_div;
+  
+    reg [31:0] clk_div;
+    reg wave_clk;
+
+always @(posedge clk) begin
+    if (!rst_n) begin
+        clk_div <= 0;
+        wave_clk <= 0;
+    end else if (clk_div >= freq_divider) begin 
+        clk_div <= 0;
+        wave_clk <= ~wave_clk;  // Toggle the new clock
+    end else begin
+        clk_div <= clk_div + 1;
+    end
+end
+
 
     reg [7:0] wave_gen_output;
 
-    /*always @(posedge clk) begin
+    always @(posedge clk) begin
         if (!rst_n) begin
             clk_div <= 32'd0;
         end else if (clk_div >= freq_divider) begin 
@@ -35,7 +50,7 @@ module tt_um_waves (
         end else begin
             clk_div <= clk_div + 1;
         end
-    end*/
+    end
 
     // Unused signals to suppress warnings
     //wire unused_freq_bits = |freq_divider[31:16];
