@@ -166,22 +166,22 @@ end
     wire [7:0] tri_wave_out, saw_wave_out, sqr_wave_out, sine_wave_out;
 
     triangular_wave_generator triangle_gen (
-        .clk(clk), .rst_n(rst_n),
+        .clk(wave_clk), .rst_n(rst_n),
        .freq_select(freq_divider[15:0]),
         .wave_out(tri_wave_out), .ena(ena)
     );
     sawtooth_wave_generator saw_gen (
-        .clk(clk), .rst_n(rst_n),
+        .clk(wave_clk), .rst_n(rst_n),
         .freq_select(freq_divider[15:0]),
         .wave_out(saw_wave_out), .ena(ena)
     );
     square_wave_generator sqr_gen (
-        .clk(clk), .rst_n(rst_n),
+        .clk(wave_clk), .rst_n(rst_n),
         .freq_select(freq_divider[15:0]),
         .wave_out(sqr_wave_out), .ena(ena)
     );
     sine_wave_generator sine_gen (
-        .clk(clk), .rst_n(rst_n),
+        .clk(wave_clk), .rst_n(rst_n),
         .freq_select(freq_divider[15:0]),
         .wave_out(sine_wave_out), .ena(ena)
     );
