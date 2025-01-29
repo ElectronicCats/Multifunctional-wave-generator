@@ -23,11 +23,11 @@ module tt_um_waves (
 
     // Frequency Divider
     reg [31:0] freq_divider;
-    reg [31:0] clk_div;
+    //reg [31:0] clk_div;
 
     reg [7:0] wave_gen_output;
 
-    always @(posedge clk) begin
+    /*always @(posedge clk) begin
         if (!rst_n) begin
             clk_div <= 32'd0;
         end else if (clk_div >= freq_divider) begin 
@@ -35,7 +35,7 @@ module tt_um_waves (
         end else begin
             clk_div <= clk_div + 1;
         end
-    end
+    end*/
 
     // Unused signals to suppress warnings
     //wire unused_freq_bits = |freq_divider[31:16];
@@ -178,16 +178,6 @@ module tt_um_waves (
         .sustain(sustain), .rel(rel),
         .amplitude(adsr_amplitude), .ena(ena)
     );
-
-    // Wave Generator 
-    /*wave_generator wave_gen_inst (
-       .clk(clk),
-       .rst_n(rst_n),
-       .freq_select(freq_select),
-       .wave_select(wave_select),
-       .white_noise_en(white_noise_en),
-        .wave_out(wave_gen_output)
-);*/
 
 // White Noise Generator Instance
 wire [7:0] noise_out;
