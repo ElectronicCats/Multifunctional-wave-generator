@@ -42,7 +42,7 @@ end
 
     reg [7:0] wave_gen_output;
 
-    always @(posedge clk) begin
+    /*always @(posedge clk) begin
         if (!rst_n) begin
             clk_div <= 32'd0;
         end else if (clk_div >= freq_divider) begin 
@@ -50,10 +50,7 @@ end
         end else begin
             clk_div <= clk_div + 1;
         end
-    end
-
-    // Unused signals to suppress warnings
-    //wire unused_freq_bits = |freq_divider[31:16];
+    end*/
 
     // Frequency Table
     always @(*) begin
@@ -223,13 +220,14 @@ end
     assign selected_wave = (white_noise_en) ? noise_out : wave_gen_output;
 
     // Apply ADSR Envelope
-    reg [7:0] scaled_wave;
-    always @(posedge clk) begin
+  reg [7:0] scaled_wave;
+  always @(posedge clk) begin
         if (!rst_n)
            scaled_wave <= 8'd0;
         else
            scaled_wave <= (selected_wave * adsr_amplitude) >> 8;
         end
+
 
 
     // I2S Output
