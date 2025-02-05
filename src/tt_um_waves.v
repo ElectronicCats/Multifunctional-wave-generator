@@ -26,11 +26,11 @@ module tt_um_waves (
     // Frequency Divider
     reg [31:0] freq_divider;
   
-  reg [31:0] clk_div;//////////
+    reg [31:0] clk_div;//////////
     reg wave_clk;
 
 
-    reg [7:0] wave_gen_output;
+    //reg [7:0] wave_gen_output;
 
     always @(posedge clk) begin
         if (!rst_n) begin
