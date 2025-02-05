@@ -145,10 +145,10 @@ end
     wire [7:0] tri_wave_out, saw_wave_out, sqr_wave_out, sine_wave_out;
     wire [7:0] noise_out;
   
-    triangular_wave_generator triangle_gen (.clk(wave_clk), .rst_n(rst_n), .freq_select(freq_divider[15:0]), .wave_out(tri_wave_out), .ena(ena));
-    sawtooth_wave_generator  saw_gen      (.clk(wave_clk), .rst_n(rst_n), .freq_select(freq_divider[15:0]), .wave_out(saw_wave_out), .ena(ena));
-    square_wave_generator   sqr_gen      (.clk(wave_clk), .rst_n(rst_n), .freq_select(freq_divider[15:0]), .wave_out(sqr_wave_out), .ena(ena));
-    sine_wave_generator     sine_gen     (.clk(wave_clk), .rst_n(rst_n), .freq_select(freq_divider[15:0]), .wave_out(sine_wave_out), .ena(ena));
+    triangular_wave_generator triangle_gen (.clk(wave_clk), .rst_n(rst_n), .freq_select(freq_divider), .wave_out(tri_wave_out), .ena(ena));
+    sawtooth_wave_generator  saw_gen      (.clk(wave_clk), .rst_n(rst_n), .freq_select(freq_divider), .wave_out(saw_wave_out), .ena(ena));
+    square_wave_generator   sqr_gen      (.clk(wave_clk), .rst_n(rst_n), .freq_select(freq_divider), .wave_out(sqr_wave_out), .ena(ena));
+    sine_wave_generator     sine_gen     (.clk(wave_clk), .rst_n(rst_n), .freq_select(freq_divider), .wave_out(sine_wave_out), .ena(ena));
     white_noise_generator   noise_gen    (.clk(clk), .rst_n(rst_n), .noise_out(noise_out), .ena(white_noise_en & ena));
 
         // ADSR Generator
@@ -183,6 +183,8 @@ end
         else
             scaled_wave <= (white_noise_en ? noise_out : selected_wave) * adsr_amplitude >> 8;
     end
+  
+  
 
 
     // I2S Output
@@ -376,18 +378,18 @@ endmodule
 
 
 module sine_wave_generator (
-    input  wire       ena,       // Enable signal
-    input  wire       clk,       // Clock
-    input  wire       rst_n,     // Active-low reset
-    input  wire [15:0] freq_select, // Frequency selection
-    output reg  [7:0] wave_out   // 8-bit sine wave output
+    input  wire       ena,        // Enable signal
+    input  wire       clk,        // Clock
+    input  wire       rst_n,      // Active-low reset
+    input  wire [31:0] freq_select, // Frequency selection (now 32 bits)
+    output reg  [7:0] wave_out    // 8-bit sine wave output
 );
 
     reg [7:0] counter;
     reg [7:0] sine_table [0:255];  // Lookup table for sine wave
-    reg [15:0] clk_div;             // Clock divider
+    reg [31:0] clk_div;            // Clock divider (now 32 bits)
 
-    // Initialize sine wave table (only first and last few values shown)
+    // Initialize sine wave table (only first few values shown)
     initial begin
         sine_table[0] = 8'd128;
         sine_table[1] = 8'd131;
@@ -650,12 +652,12 @@ module sine_wave_generator (
     always @(posedge clk) begin
         if (!rst_n) begin
             counter <= 8'd0;
-            clk_div <= 16'd0;
+            clk_div <= 32'd0; // Now a 32-bit register
             wave_out <= 8'd0;
         end else if (ena) begin
             clk_div <= clk_div + 1;
-            if (clk_div >= freq_select) begin  // Adjust frequency based on freq_select
-                clk_div <= 0;
+            if (clk_div >= freq_select - 1) begin  // Adjust frequency based on 32-bit freq_select
+                clk_div <= 32'd0;
                 counter <= counter + 1;
                 wave_out <= sine_table[counter];
             end
@@ -664,28 +666,29 @@ module sine_wave_generator (
 endmodule
 
 
+
 module square_wave_generator (
     input  wire       ena,       // Enable signal
     input  wire       clk,       // Clock
     input  wire       rst_n,     // Active-low reset
-    input  wire [15:0] freq_select, // Frequency selection
+    input  wire [31:0] freq_select, // Frequency selection (now 32 bits)
     output reg  [7:0] wave_out   // 8-bit square wave output
 );
 
     reg wave_state;
-    reg [15:0] clk_div;
+    reg [31:0] clk_div; // Now 32 bits
 
     always @(posedge clk) begin
         if (!rst_n) begin
-            clk_div <= 0;
-            wave_state <= 0;
-            wave_out <= 0;
+            clk_div <= 32'd0;
+            wave_state <= 1'b0;
+            wave_out <= 8'd0;
         end else if (ena) begin
             clk_div <= clk_div + 1;
-            if (clk_div >= freq_select) begin
-                clk_div <= 0;
+            if (clk_div >= freq_select - 1) begin  // Use the full 32-bit range
+                clk_div <= 32'd0;
                 wave_state <= ~wave_state;
-                wave_out <= wave_state ? 8'd255 : 8'd0;
+                wave_out <= wave_state ? 8'd255 : 8'd0; // Toggle between 0 and 255
             end
         end
     end
@@ -696,30 +699,31 @@ module sawtooth_wave_generator (
     input  wire       ena,       // Enable signal
     input  wire       clk,       // Clock
     input  wire       rst_n,     // Active-low reset
-    input  wire [15:0] freq_select, // Frequency selection
+    input  wire [31:0] freq_select, // Frequency selection (now 32 bits)
     output reg  [7:0] wave_out   // 8-bit sawtooth wave output
 );
 
     reg [7:0] counter;
-    reg [15:0] clk_div;
+    reg [31:0] clk_div; // Now 32 bits
 
     always @(posedge clk) begin
         if (!rst_n) begin
             counter <= 8'd0;
-            clk_div <= 16'd0;
+            clk_div <= 32'd0;
         end else if (ena) begin
             clk_div <= clk_div + 1;
-            if (clk_div >= freq_select) begin
-                clk_div <= 0;
-                counter <= counter + 1;
+            if (clk_div >= freq_select - 1) begin // Use full 32-bit range
+                clk_div <= 32'd0;
+                counter <= counter + 1; // Increment counter for sawtooth wave
             end
         end
     end
 
     always @(posedge clk) begin
-        wave_out <= counter;
+        wave_out <= counter; // Output the sawtooth wave
     end
 endmodule
+
 
 
 
@@ -800,24 +804,24 @@ module triangular_wave_generator (
     input  wire       ena,       // Enable signal
     input  wire       clk,       // Clock
     input  wire       rst_n,     // Active-low reset
-    input  wire [15:0] freq_select, // Frequency selection
+    input  wire [31:0] freq_select, // Frequency selection (now 32 bits)
     output reg [7:0]  wave_out   // 8-bit triangular wave output
 );
 
     reg [7:0] counter;
     reg       direction;
-    reg [15:0] clk_div;
+    reg [31:0] clk_div; // Now 32 bits
 
     always @(posedge clk) begin
         if (!rst_n) begin
             counter   <= 8'd0;
             direction <= 1'b1;
-            clk_div   <= 16'd0;
+            clk_div   <= 32'd0;
             wave_out  <= 8'd0;
         end else if (ena) begin
             clk_div <= clk_div + 1;
-            if (clk_div >= freq_select) begin
-                clk_div <= 0;
+            if (clk_div >= freq_select - 1) begin  // Use the full 32-bit range
+                clk_div <= 32'd0;
                 if (direction) begin
                     if (counter < 8'd255) counter <= counter + 1;
                     else direction <= 1'b0;
@@ -830,11 +834,9 @@ module triangular_wave_generator (
     end
 
     always @(posedge clk) begin
-        wave_out <= counter;
+        wave_out <= counter; // Output the triangular wave
     end
 endmodule
-
-
 
 
 module encoder #(
