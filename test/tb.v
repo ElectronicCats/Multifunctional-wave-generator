@@ -2,13 +2,15 @@
 `timescale 1ns / 1ps
 
 /* Testbench for tt_um_waves
-   - Instantiates the module
+   - Instantiates the module under test (DUT)
    - Generates a 25 MHz clock (40 ns period)
    - Initializes reset and enable signals
+   - Tests UART transmission, waveform selection, frequency control, and noise handling
 */
-module tb ();
 
-  // Dump the signals to a VCD file for waveform analysis
+module tb;
+
+  // Dump signals to a VCD file for waveform analysis
   initial begin
     $dumpfile("tb.vcd");
     $dumpvars(0, tb);
@@ -35,7 +37,7 @@ module tb ();
 `endif
 
   // Instantiate the module under test
-  tt_um_waves user_project (
+  tt_um_waves (
 `ifdef GL_TEST
       .VPWR(VPWR),
       .VGND(VGND),
@@ -63,4 +65,62 @@ module tb ();
     $finish;      // End simulation
   end
 
+  // UART transmission simulation
+  task uart_send(input [7:0] data);
+    begin
+      // Start bit (low)
+      ui_in = 0;
+      #2604;  // Adjusted for 25 MHz clock (one bit period)
+
+      // Send 8 data bits (LSB first)
+      for (int i = 0; i < 8; i = i + 1) begin
+        ui_in = (data >> i) & 1;
+        #2604;
+      end
+
+      // Stop bit (high)
+      ui_in = 1;
+      #2604;  // Wait for stop bit
+    end
+  endtask
+
+  // Test sequence for UART commands
+  initial begin
+    // Test UART: Select different waveforms and verify I2S output changes
+    #100;
+    uart_send(8'h54);  // 'T' for Triangle
+    #1000;  // Wait for processing time
+    // Observe I2S serial data (uo_out[2]) change
+    $display("I2S SD signal after Triangle command: %b", uo_out[2]);
+
+    uart_send(8'h53);  // 'S' for Sawtooth
+    #1000;
+    $display("I2S SD signal after Sawtooth command: %b", uo_out[2]);
+
+    uart_send(8'h51);  // 'Q' for Square
+    #1000;
+    $display("I2S SD signal after Square command: %b", uo_out[2]);
+
+    uart_send(8'h57);  // 'W' for Sine
+    #1000;
+    $display("I2S SD signal after Sine command: %b", uo_out[2]);
+
+    // Test UART: Set frequency ('0'-'9') and observe I2S clock
+    for (int i = 0; i < 10; i = i + 1) begin
+      uart_send(8'h30 + i);  // Send frequency character (e.g., '0', '1', ..., '9')
+      #1000;
+      $display("I2S SCK signal after frequency '%d' command: %b", i, uo_out[0]);
+    end
+
+    // Test UART: Enable White Noise ('N') and Disable ('F')
+    uart_send(8'h4E);  // 'N' for Enable White Noise
+    #1000;
+    $display("I2S SD signal after enabling White Noise: %b", uo_out[2]);
+
+    uart_send(8'h46);  // 'F' for Disable White Noise
+    #1000;
+    $display("I2S SD signal after disabling White Noise: %b", uo_out[2]);
+
+    $finish;  // End simulation
+  end
 endmodule
