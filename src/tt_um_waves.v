@@ -176,27 +176,21 @@ end
     end
 
     // Apply ADSR Envelope
-    // Apply ADSR Envelope
     reg [7:0] scaled_wave;
     reg [15:0] temp_wave;
 
+    // Suppress Verilator warning for unused lower bits
+    /* verilator lint_off UNUSEDSIGNAL */
     always @(posedge clk) begin
         if (!rst_n)
             temp_wave <= 16'd0;
         else
             temp_wave <= ({8'd0, white_noise_en ? noise_out : selected_wave}) * adsr_amplitude;
-     end
+    end
+   /* verilator lint_on UNUSEDSIGNAL */
 
     assign scaled_wave = temp_wave[15:8];  // Take upper 8 bits for correct scaling
 
-
-    /*reg [7:0] scaled_wave;
-    always @(posedge clk) begin
-        if (!rst_n)
-            scaled_wave <= 8'd0;
-        else
-            scaled_wave <= (white_noise_en ? noise_out : selected_wave) * adsr_amplitude >> 8;
-    end*/
   
   
 
