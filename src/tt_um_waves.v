@@ -179,21 +179,14 @@ end
     reg [7:0] scaled_wave;
     reg [15:0] temp_wave;
 
-    // Suppress Verilator warning for unused lower bits
-    /* verilator lint_off UNUSEDSIGNAL */
     always @(posedge clk) begin
         if (!rst_n)
             temp_wave <= 16'd0;
         else
             temp_wave <= ({8'd0, white_noise_en ? noise_out : selected_wave}) * adsr_amplitude;
     end
-   /* verilator lint_on UNUSEDSIGNAL */
 
-    assign scaled_wave = temp_wave[15:8];  // Take upper 8 bits for correct scaling
-
-  
-  
-
+    assign scaled_wave = (temp_wave[15:8] + temp_wave[7:0]) >> 1;  // Usa ambas mitades para mejor precisión
 
     // I2S Output
     wire i2s_sck, i2s_ws, i2s_sd;
