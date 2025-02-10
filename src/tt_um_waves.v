@@ -28,6 +28,7 @@ module tt_um_waves (
   
     reg [31:0] clk_div;//////////
     reg wave_clk;
+    reg [5:0] freq_select_reg;
 
 
     //reg [7:0] wave_gen_output;
@@ -35,22 +36,23 @@ module tt_um_waves (
     always @(posedge clk) begin
         if (!rst_n) begin
             clk_div  <= 0;
-            wave_clk <= 0;
+             wave_clk <= 0;
         end else if (clk_div >= freq_divider) begin 
             clk_div  <= 0;
-            wave_clk <= ~wave_clk;  // Toggle the clock
-        end else begin
+            wave_clk <= ~wave_clk;
+        end else if (clk_div < 32'hFFFFFFFE) begin  
             clk_div <= clk_div + 1;
         end
     end
 
 
-    // Frequency Table
-   always @(posedge clk) begin
-    if (!rst_n)
+    always @(posedge clk) begin
+    if (!rst_n) begin
+        freq_select_reg <= 6'b000000;
         freq_divider <= 32'd284091;  // Default to A4 frequency
-    else begin
-        case (freq_select)
+    end else begin
+      freq_select_reg <= freq_select;  // Update register first
+      case (freq_select_reg)
         6'b000000: freq_divider <= 32'd1915712;  // C2 (65.41 Hz)
        	6'b000001: freq_divider <= 32'd1803586;  // C#2/Db2 (69.30 Hz)
         6'b000010: freq_divider <= 32'd1702624;  // D2 (73.42 Hz)
@@ -149,7 +151,7 @@ end
     sawtooth_wave_generator  saw_gen      (.clk(wave_clk), .rst_n(rst_n), .freq_select(freq_divider), .wave_out(saw_wave_out), .ena(ena));
     square_wave_generator   sqr_gen      (.clk(wave_clk), .rst_n(rst_n), .freq_select(freq_divider), .wave_out(sqr_wave_out), .ena(ena));
     sine_wave_generator     sine_gen     (.clk(wave_clk), .rst_n(rst_n), .freq_select(freq_divider), .wave_out(sine_wave_out), .ena(ena));
-    white_noise_generator   noise_gen    (.clk(clk), .rst_n(rst_n), .noise_out(noise_out), .ena(white_noise_en & ena));
+    white_noise_generator   noise_gen    (.clk(wave_clk), .rst_n(rst_n), .noise_out(noise_out), .ena(white_noise_en & ena));
 
         // ADSR Generator
     adsr_generator adsr_gen (
@@ -176,30 +178,19 @@ end
     end
 
     // Apply ADSR Envelope
-    // Apply ADSR Envelope
     reg [7:0] scaled_wave;
     reg [15:0] temp_wave;
+    wire [7:0] unused_temp_wave;  // Dummy variable to avoid warnings
 
     always @(posedge clk) begin
         if (!rst_n)
             temp_wave <= 16'd0;
         else
             temp_wave <= ({8'd0, white_noise_en ? noise_out : selected_wave}) * adsr_amplitude;
-     end
+    end
 
-    assign scaled_wave = temp_wave[15:8];  // Take upper 8 bits for correct scaling
-
-
-    /*reg [7:0] scaled_wave;
-    always @(posedge clk) begin
-        if (!rst_n)
-            scaled_wave <= 8'd0;
-        else
-            scaled_wave <= (white_noise_en ? noise_out : selected_wave) * adsr_amplitude >> 8;
-    end*/
-  
-  
-
+    assign scaled_wave = temp_wave[15:8];  // Use only upper 8 bits
+    assign unused_temp_wave = temp_wave[7:0];  // Prevent "unused bits" warning
 
     // I2S Output
     wire i2s_sck, i2s_ws, i2s_sd;
