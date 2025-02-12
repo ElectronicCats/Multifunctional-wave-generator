@@ -26,10 +26,6 @@ module tb;
   wire [7:0] uio_out;
   wire [7:0] uio_oe;
 
-  // Observing selected_wave and noise_out
-  wire [7:0] selected_wave;
-  wire [7:0] noise_out;
-
 `ifdef GL_TEST
   wire VPWR = 1'b1;
   wire VGND = 1'b0;
@@ -86,21 +82,21 @@ module tb;
     #100;
     uart_send(8'h54);  // 'T' for Triangle
     #1000;
-    $display("Triangle: I2S SD: %b, selected_wave: %d", uo_out[2], selected_wave);
+    $display("Triangle: I2S SD: %b", uo_out[2]);
 
     uart_send(8'h53);  // 'S' for Sawtooth
     #1000;
-    $display("Sawtooth: I2S SD: %b, selected_wave: %d", uo_out[2], selected_wave);
+    $display("Sawtooth: I2S SD: %b", uo_out[2]);
 
     uart_send(8'h51);  // 'Q' for Square
     #1000;
-    $display("Square: I2S SD: %b, selected_wave: %d", uo_out[2], selected_wave);
+    $display("Square: I2S SD: %b", uo_out[2]);
 
     uart_send(8'h57);  // 'W' for Sine
     #1000;
-    $display("Sine: I2S SD: %b, selected_wave: %d", uo_out[2], selected_wave);
+    $display("Sine: I2S SD: %b", uo_out[2]);
 
-    //Fix: Declare integer j before the loop
+    // Fix: Declare integer j before the loop
     integer j;
     for (j = 0; j < 10; j = j + 1) begin
       uart_send(8'h30 + j);
@@ -108,14 +104,14 @@ module tb;
       $display("Freq %d: I2S SCK: %b", j, uo_out[0]);
     end
 
-    // White Noise Test
+    //  White Noise Test
     uart_send(8'h4E);  // Enable Noise
     #1000;
-    $display("Noise On: I2S SD: %b, noise_out: %d", uo_out[2], noise_out);
+    $display("Noise On: I2S SD: %b", uo_out[2]);
 
     uart_send(8'h46);  // Disable Noise
     #1000;
-    $display("Noise Off: I2S SD: %b, noise_out: %d", uo_out[2], noise_out);
+    $display("Noise Off: I2S SD: %b", uo_out[2]);
 
     $finish;
   end
