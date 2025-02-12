@@ -165,6 +165,7 @@ module tt_um_waves (
                 3'b001: selected_wave <= saw_wave_out;
                 3'b010: selected_wave <= sqr_wave_out;
                 3'b011: selected_wave <= sine_wave_out;
+                3'b100: selected_wave <= noise_out; 
                 default: selected_wave <= 8'd0;
             endcase
         end
@@ -184,7 +185,7 @@ module tt_um_waves (
         if (!rst_n)
             temp_wave <= 8'd0;
         else
-            temp_wave <= (white_noise_en ? 8'd255 : 8'd127) * adsr_amplitude; 
+            temp_wave <= (selected_wave * adsr_amplitude) >> 8;
     end
 
     // I2S Output
