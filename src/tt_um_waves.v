@@ -32,7 +32,7 @@ module tt_um_waves (
   
     //reg [5:0] freq_select_reg;
 
-    // Updated frequency selection logic
+    // Frequency selection logic
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             freq_divider <= 32'd284091;  // Default to A4 frequency
@@ -178,26 +178,19 @@ module tt_um_waves (
         .amplitude(adsr_amplitude), .ena(ena)
     );
 
-        // Apply ADSR Envelope
-    reg [15:0] temp_wave;          // Declare temp_wave as a sequential register
-    wire [7:0] scaled_wave;        // Declare scaled_wave as a wire (combinational)
-
-    // Sequentially update temp_wave on the clock edge
+    // Apply ADSR Envelope
+    reg [7:0] temp_wave;  // Reduced from [15:0] to avoid unused bits
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
-            temp_wave <= 16'd0;  // Reset temp_wave to 0
+            temp_wave <= 8'd0;
         else
-            temp_wave <= ({8'd0, white_noise_en ? noise_out : selected_wave}) * adsr_amplitude;
+            temp_wave <= (white_noise_en ? 8'd255 : 8'd127) * adsr_amplitude; 
     end
-
-    // Combinational assignments
-    assign scaled_wave = temp_wave[15:8];   // Extract upper 8 bits for scaled_wave
-
 
     // I2S Output
     wire i2s_sck, i2s_ws, i2s_sd;
     i2s_transmitter i2s_out (
-      .clk(clk), .rst_n(rst_n),.data(scaled_wave), .sck(i2s_sck), .ws(i2s_ws),.sd(i2s_sd),.ena(ena)
+      .clk(clk), .rst_n(rst_n),.data(temp_wave), .sck(i2s_sck), .ws(i2s_ws),.sd(i2s_sd),.ena(ena)
     );
 
     // Assign I2S Outputs to `uo_out`
