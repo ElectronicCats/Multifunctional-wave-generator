@@ -100,7 +100,7 @@ module tb;
     #1000;
     $display("Sine: I2S SD: %b, selected_wave: %d", uo_out[2], selected_wave);
 
-    // Fix: Declare integer j before the loop
+    //Fix: Declare integer j before the loop
     integer j;
     for (j = 0; j < 10; j = j + 1) begin
       uart_send(8'h30 + j);
