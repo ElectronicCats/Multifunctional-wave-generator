@@ -96,7 +96,7 @@ module tb;
     #1000;
     $display("Sine: I2S SD: %b", uo_out[2]);
 
-    // Fix: Declare integer j before the loop
+    // ✅ Fix: Declare integer j inside the `initial` block
     integer j;
     for (j = 0; j < 10; j = j + 1) begin
       uart_send(8'h30 + j);
@@ -104,7 +104,7 @@ module tb;
       $display("Freq %d: I2S SCK: %b", j, uo_out[0]);
     end
 
-    //  White Noise Test
+    // White Noise Test
     uart_send(8'h4E);  // Enable Noise
     #1000;
     $display("Noise On: I2S SD: %b", uo_out[2]);
