@@ -15,6 +15,8 @@ module tt_um_waves (
     wire [5:0] freq_select;
     wire [2:0] wave_select;
     wire       white_noise_en;
+  
+  
     wire unused_ui_in;
     assign unused_ui_in = |ui_in[7:1];  // OR-reduction of unused bits
 
@@ -25,37 +27,17 @@ module tt_um_waves (
 
     // Frequency Divider
     reg [31:0] freq_divider;
-  
     reg [31:0] clk_div;//////////
     reg wave_clk;
-    reg [5:0] freq_select_reg;
+  
+    //reg [5:0] freq_select_reg;
 
-
-    //reg [7:0] wave_gen_output;
-
+    // Updated frequency selection logic
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            clk_div  <= 0;
-            wave_clk <= 0;
-        end else if (ena) begin
-            if (clk_div >= freq_divider) begin
-                clk_div  <= 0;
-                wave_clk <= ~wave_clk;
-            end else if (clk_div < 32'hFFFFFFFE) begin  
-                clk_div <= clk_div + 1;
-            end
-        end
-    end
-
-
-
-always @(posedge clk or negedge rst_n) begin
-    if (!rst_n) begin
-        freq_select_reg <= 6'b000000;
-        freq_divider <= 32'd284091;  // Default to A4 frequency
-    end else begin
-        freq_select_reg <= freq_select;  // Update register first
-        case (freq_select_reg)
+            freq_divider <= 32'd284091;  // Default to A4 frequency
+        end else begin
+            case (freq_select)  // FIXED: Using freq_select directly to avoid delay issues
         6'b000000: freq_divider <= 32'd1915712;  // C2 (65.41 Hz)
        	6'b000001: freq_divider <= 32'd1803586;  // C#2/Db2 (69.30 Hz)
         6'b000010: freq_divider <= 32'd1702624;  // D2 (73.42 Hz)
@@ -124,10 +106,25 @@ always @(posedge clk or negedge rst_n) begin
         6'b111001: freq_divider <= 32'd7090;     // A6 (1760.00 Hz)
         6'b111010: freq_divider <= 32'd6719;     // A#6/Bb6 (1864.66 Hz)
         6'b111011: freq_divider <= 32'd6358;     // B6 (1975.53 Hz)
-            default: freq_divider <= 32'd284091;  // Default to A4 (440 Hz)
-        endcase
+                default:   freq_divider <= 32'd284091;   // Default frequency
+            endcase
+        end
     end
-end
+
+    // Clock Divider to generate wave_clk
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            clk_div  <= 0;
+            wave_clk <= 0;
+        end else if (ena) begin
+            if (clk_div >= freq_divider) begin
+                clk_div  <= 0;
+                wave_clk <= ~wave_clk;  // Toggle waveform clock
+            end else begin
+                clk_div <= clk_div + 1;
+            end
+        end
+    end
 
 
 
@@ -156,14 +153,6 @@ end
     square_wave_generator   sqr_gen      (.clk(wave_clk), .rst_n(rst_n), .freq_select(freq_divider), .wave_out(sqr_wave_out), .ena(ena));
     sine_wave_generator     sine_gen     (.clk(wave_clk), .rst_n(rst_n), .freq_select(freq_divider), .wave_out(sine_wave_out), .ena(ena));
     white_noise_generator   noise_gen    (.clk(wave_clk), .rst_n(rst_n), .noise_out(noise_out), .ena(white_noise_en & ena));
-
-        // ADSR Generator
-    adsr_generator adsr_gen (
-        .clk(clk), .rst_n(rst_n),
-        .attack(attack), .decay(decay),
-        .sustain(sustain), .rel(rel),
-        .amplitude(adsr_amplitude), .ena(ena)
-    );
     
     // Select waveform output
     reg [7:0] selected_wave;
@@ -180,13 +169,21 @@ end
             endcase
         end
     end
+  
+   // ADSR Generator
+    adsr_generator adsr_gen (
+        .clk(clk), .rst_n(rst_n),
+        .attack(attack), .decay(decay),
+        .sustain(sustain), .rel(rel),
+        .amplitude(adsr_amplitude), .ena(ena)
+    );
 
         // Apply ADSR Envelope
     reg [15:0] temp_wave;          // Declare temp_wave as a sequential register
     wire [7:0] scaled_wave;        // Declare scaled_wave as a wire (combinational)
 
     // Sequentially update temp_wave on the clock edge
-  always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
             temp_wave <= 16'd0;  // Reset temp_wave to 0
         else
@@ -194,12 +191,11 @@ end
     end
 
     // Combinational assignments
-    assign scaled_wave = temp_wave[15:8];  // Extract upper 8 bits for scaled_wave
+    assign scaled_wave = temp_wave[15:8];   // Extract upper 8 bits for scaled_wave
 
 
     // I2S Output
     wire i2s_sck, i2s_ws, i2s_sd;
-
     i2s_transmitter i2s_out (
       .clk(clk), .rst_n(rst_n),.data(scaled_wave), .sck(i2s_sck), .ws(i2s_ws),.sd(i2s_sd),.ena(ena)
     );
@@ -209,8 +205,6 @@ end
     assign uo_out[1] = i2s_ws;
     assign uo_out[2] = i2s_sd;
     assign uo_out[7:3] = 5'b00000;  // Ensure upper bits are not floating
-
-    // Assign Outputs
     assign uio_out = 8'b0;     
     assign uio_oe = 8'b0;      
 endmodule
