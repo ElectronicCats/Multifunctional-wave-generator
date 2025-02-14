@@ -203,7 +203,6 @@ module tt_um_waves (
     assign uio_oe = 8'b0;      
 endmodule
 
-
 module uart_receiver (
     input wire clk,               // System clock
     input wire rst_n,             // Active-low reset
@@ -213,10 +212,17 @@ module uart_receiver (
     output reg white_noise_en     // White noise enable
 );
 
-    reg [7:0] received_byte;   // Received byte buffer
-    reg [2:0] bit_count;       // Bit count (0-7 for 8 bits)
-    reg receiving;             // UART receiving flag
-    reg [1:0] state;           // State machine: 0 = idle, 1 = receiving, 2 = processing
+    // Parameters
+    parameter BAUD_TICKS = 2604;  // Baud rate clock ticks (example for 9600 baud)
+    
+    // Registers and wires
+    reg [31:0] baud_counter;      // Counter for baud rate clock (32 bits to match BAUD_TICKS)
+    reg [7:0] received_byte;      // Received byte buffer
+    reg [2:0] bit_count;          // Bit count (0-7 for 8 bits)
+    reg receiving;                // UART receiving flag
+    reg [1:0] state;              // State machine: 0 = idle, 1 = receiving, 2 = processing
+
+    reg [7:0] temp_byte;          // Temporary register for intermediate calculations
 
     // State machine states
     localparam IDLE       = 2'b00;
@@ -225,7 +231,7 @@ module uart_receiver (
 
     // Synchronize the RX signal to avoid metastability
     reg rx_sync1, rx_sync2;
-  always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             rx_sync1 <= 1'b1;
             rx_sync2 <= 1'b1;
@@ -239,7 +245,7 @@ module uart_receiver (
 
     // Start bit detection (falling edge on rx_stable)
     reg rx_last;
-  always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
             rx_last <= 1'b1;
         else
@@ -247,7 +253,8 @@ module uart_receiver (
     end
     wire start_bit = (rx_last == 1'b1 && rx_stable == 1'b0); // Falling edge detection
 
-  always @(posedge clk or negedge rst_n) begin
+    // Main state machine
+    always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             // Reset all registers
             received_byte <= 8'd0;
@@ -257,24 +264,31 @@ module uart_receiver (
             wave_select <= 3'b000;  // Default: Triangle wave
             white_noise_en <= 1'b0; // Disable white noise
             state <= IDLE;
+            baud_counter <= 0;     // Reset baud counter
         end else begin
             case (state)
                 IDLE: begin
                     if (start_bit) begin
                         receiving <= 1'b1;
                         bit_count <= 0;
+                        baud_counter <= 0; // Reset baud counter
                         state <= RECEIVING;
                     end
                 end
 
                 RECEIVING: begin
                     if (receiving) begin
-                        received_byte[bit_count] <= rx_stable;
-                        if (bit_count < 3'd7) begin
-                            bit_count <= bit_count + 1;
+                        if (baud_counter == BAUD_TICKS - 1) begin
+                            baud_counter <= 0; // Reset baud counter for the next bit
+                            received_byte[bit_count] <= rx_stable; // Store current bit
+                            if (bit_count < 3'd7) begin
+                                bit_count <= bit_count + 1;
+                            end else begin
+                                receiving <= 1'b0; // All bits received
+                                state <= PROCESSING; // Go to processing state
+                            end
                         end else begin
-                            receiving <= 1'b0;
-                            state <= PROCESSING;
+                            baud_counter <= baud_counter + 1; // Increment baud counter
                         end
                     end
                 end
@@ -294,11 +308,11 @@ module uart_receiver (
                         // Frequency selection (numbers '0'-'9' and letters 'A'-'Z')
                         default: begin
                             if (received_byte >= 8'h30 && received_byte <= 8'h39) begin
-                                // '0' to '9' -> Convert to 6-bit value (0-9)
-                                freq_select <= (received_byte[5:0] - 6'd48);  
+                                temp_byte <= received_byte - 8'h30; // Convert '0'-'9' to value
+                                freq_select <= temp_byte[5:0];     // Use lower 6 bits
                             end else if (received_byte >= 8'h41 && received_byte <= 8'h5A) begin
-                                // 'A' to 'Z' -> Convert to 6-bit value (10-35)
-                                freq_select <= (received_byte[5:0] - 6'd55);  
+                                temp_byte <= received_byte - 8'h41 + 8'd10; // Convert 'A'-'Z' to value
+                                freq_select <= temp_byte[5:0];            // Use lower 6 bits
                             end
                         end
                     endcase
@@ -382,6 +396,8 @@ module sine_wave_generator (
     input  wire [31:0] freq_select, // Frequency selection (32 bits)
     output reg  [7:0] wave_out    // 8-bit sine wave output
 );
+
+//`include "sine_table.mem"
 
     reg [7:0] counter;      // Counter for the sine table index
     reg [31:0] clk_div;     // Clock divider (32-bit)
