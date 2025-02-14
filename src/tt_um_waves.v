@@ -15,7 +15,7 @@ module tt_um_waves (
     wire [5:0] freq_select;
     wire [2:0] wave_select;
     wire       white_noise_en;
-  
+  wire [6:0] unused_temp_wave = temp_wave[6:0];
   
     wire unused_ui_in;
     assign unused_ui_in = |ui_in[7:1];  // OR-reduction of unused bits
@@ -228,6 +228,7 @@ module uart_receiver (
     // Parameters
     parameter BAUD_TICKS = 2604;  // Baud rate clock ticks (example for 9600 baud)
     
+    wire [1:0] unused_temp_bits = temp_byte[7:6];
     // Registers and wires
     reg [31:0] baud_counter;      // Counter for baud rate clock (32 bits to match BAUD_TICKS)
     reg [7:0] received_byte;      // Received byte buffer
