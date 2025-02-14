@@ -78,6 +78,7 @@ module tb;
   endtask
 
   // Test sequence for UART commands
+  reg [3:0] j;  // Replace integer j with reg [3:0] j
   initial begin
     #100;
     uart_send(8'h54);  // 'T' for Triangle
@@ -96,8 +97,7 @@ module tb;
     #1000;
     $display("Sine: I2S SD: %b", uo_out[2]);
 
-    // ✅ Fix: Declare integer j inside the `initial` block
-    integer j;
+    // Iterate over frequencies using reg [3:0] j
     for (j = 0; j < 10; j = j + 1) begin
       uart_send(8'h30 + j);
       #1000;
