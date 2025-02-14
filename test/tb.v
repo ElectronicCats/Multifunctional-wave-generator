@@ -26,17 +26,13 @@ module tb;
   wire [7:0] uio_out;
   wire [7:0] uio_oe;
 
-`ifdef GL_TEST
-  wire VPWR = 1'b1;
-  wire VGND = 1'b0;
-`endif
+  // I2S Signals
+  wire i2s_sck = uo_out[0];
+  wire i2s_ws  = uo_out[1];
+  wire i2s_sd  = uo_out[2];
 
   // Instantiate the module under test
   tt_um_waves dut (
-`ifdef GL_TEST
-      .VPWR(VPWR),
-      .VGND(VGND),
-`endif
       .ui_in  (ui_in),
       .uo_out (uo_out),
       .uio_in (uio_in),
@@ -47,14 +43,20 @@ module tb;
       .rst_n  (rst_n)
   );
 
-  // Test sequence
+  // Load Sine Wave LUT from file
+  reg [7:0] sine_table [0:127]; // Adjust size based on file contents
+  initial begin
+    $readmemh("sine_table.mem", sine_table);
+  end
+
+  // Reset sequence
   initial begin
     #100;
     rst_n = 1;    
     ena = 1;      
 
     #200;
-    ui_in = 8'h41; 
+    ui_in = 8'h41;  // Arbitrary input
 
     #500000;
     $finish;
@@ -62,57 +64,78 @@ module tb;
 
   // UART transmission simulation
   task uart_send(input [7:0] data);
-    integer i;
+    reg [7:0] i;  // Changed from integer to reg
     begin
-      ui_in[0] = 0;
+      ui_in[0] = 0;  // Start bit
       #2604;  
 
       for (i = 0; i < 8; i = i + 1) begin
         ui_in[0] = (data >> i) & 1;
-        #2604;
+        #2604;  // 9600 baud bit time
       end
 
-      ui_in[0] = 1;
+      ui_in[0] = 1;  // Stop bit
       #2604;  
     end
   endtask
 
-  // Test sequence for UART commands
-  reg [3:0] j;  // Replace integer j with reg [3:0] j
+  // Test sequence for UART commands & I2S validation
+  reg [3:0] j;  // Frequency selection index
   initial begin
     #100;
-    uart_send(8'h54);  // 'T' for Triangle
+    
+    // Test wave selection
+    uart_send(8'h54);  // 'T' for Triangle wave
     #1000;
-    $display("Triangle: I2S SD: %b", uo_out[2]);
+    $display("Triangle Wave Selected - I2S SD: %b", i2s_sd);
 
-    uart_send(8'h53);  // 'S' for Sawtooth
+    uart_send(8'h53);  // 'S' for Sawtooth wave
     #1000;
-    $display("Sawtooth: I2S SD: %b", uo_out[2]);
+    $display("Sawtooth Wave Selected - I2S SD: %b", i2s_sd);
 
-    uart_send(8'h51);  // 'Q' for Square
+    uart_send(8'h51);  // 'Q' for Square wave
     #1000;
-    $display("Square: I2S SD: %b", uo_out[2]);
+    $display("Square Wave Selected - I2S SD: %b", i2s_sd);
 
-    uart_send(8'h57);  // 'W' for Sine
+    uart_send(8'h57);  // 'W' for Sine wave
     #1000;
-    $display("Sine: I2S SD: %b", uo_out[2]);
+    $display("Sine Wave Selected - I2S SD: %b", i2s_sd);
 
-    // Iterate over frequencies using reg [3:0] j
+    // Test frequency selection
     for (j = 0; j < 10; j = j + 1) begin
       uart_send(8'h30 + j);
       #1000;
-      $display("Freq %d: I2S SCK: %b", j, uo_out[0]);
+      $display("Freq %d Selected - I2S SCK: %b, WS: %b, SD: %b", j, i2s_sck, i2s_ws, i2s_sd);
     end
 
     // White Noise Test
-    uart_send(8'h4E);  // Enable Noise
+    uart_send(8'h4E);  // Enable White Noise
     #1000;
-    $display("Noise On: I2S SD: %b", uo_out[2]);
+    $display("White Noise Enabled - I2S SD: %b", i2s_sd);
 
-    uart_send(8'h46);  // Disable Noise
+    uart_send(8'h46);  // Disable White Noise
     #1000;
-    $display("Noise Off: I2S SD: %b", uo_out[2]);
+    $display("White Noise Disabled - I2S SD: %b", i2s_sd);
+
+    // Check sine wave LUT integrity
+    check_sine_wave_lut();
 
     $finish;
   end
+
+  // LUT Verification - Ensure sine wave table is correct
+  task check_sine_wave_lut;
+    reg [7:0] i;  // Changed from integer to reg
+    begin
+      for (i = 0; i < 128; i = i + 1) begin
+        #100;
+        if (uo_out != sine_table[i]) begin
+          $display("ERROR: Sine LUT mismatch at index %d: Expected %h, Got %h", i, sine_table[i], uo_out);
+        end else begin
+          $display("Sine LUT check passed at index %d: %h", i, uo_out);
+        end
+      end
+    end
+  endtask
+
 endmodule

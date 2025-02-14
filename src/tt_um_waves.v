@@ -179,18 +179,21 @@ module tt_um_waves (
     );
 
     // Apply ADSR Envelope
-    reg [15:0] temp_wave;  // Full 16-bit calculation
-    reg [7:0] scaled_wave; // Final 8-bit result
+    reg [15:0] temp_wave;  // Ensure full precision calculation
+reg [7:0] scaled_wave; // Final 8-bit output
 
-    always @(posedge clk or negedge rst_n) begin
+always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
         temp_wave <= 16'd0;
         scaled_wave <= 8'd0;
     end else begin
         temp_wave <= selected_wave * adsr_amplitude; // Full precision
-        scaled_wave <= temp_wave[15:8] + {7'b0, temp_wave[7]}; // Ensure RHS is 8-bit
+        scaled_wave <= temp_wave[15:8] + {7'b0, temp_wave[7]}; // Convert temp_wave[7] to 8-bit
+
     end
 end
+
+
 
     // I2S Output
     wire i2s_sck, i2s_ws, i2s_sd;
@@ -232,7 +235,7 @@ module uart_receiver (
     reg receiving;                // UART receiving flag
     reg [1:0] state;              // State machine: 0 = idle, 1 = receiving, 2 = processing
 
-  reg [7:0] temp_byte;          // Temporary register for intermediate calculations
+    reg [7:0] temp_byte; // Ensure enough bits for calculation
 
     // State machine states
     localparam IDLE       = 2'b00;
@@ -359,39 +362,49 @@ endmodule
 
 
 module i2s_transmitter (
-    input wire clk,            // System clock
-    input wire rst_n,          // Reset, active low
-    input wire ena,            // Enable signal
-    input wire [7:0] data,     // 8-bit audio data
-    output reg sck,                       // Bit clock
-    output reg ws,             // Word select
-    output reg sd              // Serial data output
+    input wire clk,        // System clock
+    input wire rst_n,      // Reset (active low)
+    input wire ena,        // Enable signal
+    input wire [7:0] data, // 8-bit audio data
+    output reg sck,        // Serial clock (bit clock)
+    output reg ws,         // Word select (left/right channel)
+    output reg sd          // Serial data output
 );
 
-    reg [3:0] bit_counter;
-    reg [15:0] audio_data;
+    reg [3:0] bit_counter;  // Counts bits being sent
+    reg [15:0] shift_reg;   // Shift register for transmitting data
+    reg [7:0] clk_div;      // Clock divider for generating `sck`
 
-    // I2S transmission logic
-  always @(posedge clk or negedge rst_n) begin
+    parameter SCK_DIV = 16; // Adjust this based on your clock frequency
+
+    always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            bit_counter <= 4'd0;
-            audio_data  <= 16'd0;
-            sck         <= 0;
-            ws          <= 0;
-            sd          <= 0;
+            clk_div    <= 0;
+            sck        <= 0;
+            ws         <= 0;
+            sd         <= 0;
+            bit_counter <= 0;
+            shift_reg  <= 16'd0;
         end else if (ena) begin
-            // Bit clock generation
-            sck <= ~sck;
-            if (sck) begin
-                bit_counter <= bit_counter + 1;
-                if (bit_counter == 15) begin
-                    bit_counter <= 0;
-                    ws <= ~ws;  // Toggle Word Select for I2S framing
-                    // Load next audio sample
-                    audio_data <= {data, data};  // Replicate 8-bit data for 16-bit transmission
+            // Generate I2S Serial Clock (sck) at the correct frequency
+            if (clk_div == (SCK_DIV - 1)) begin
+                clk_div <= 0;
+                sck <= ~sck;  // Toggle sck
+            end else begin
+                clk_div <= clk_div + 1;
+            end
+
+            // Data Transmission Logic (Shift Register)
+            if (sck == 0) begin  // Shift data on the falling edge of sck
+                if (bit_counter == 0) begin
+                    ws <= ~ws;  // Toggle word select every 16 bits
+                    shift_reg <= {data, data};  // Duplicate 8-bit data for 16-bit format
+                end else begin
+                    shift_reg <= shift_reg << 1;  // Shift left to send MSB first
                 end
-                // Transmit audio data bit by bit
-                sd <= audio_data[15 - bit_counter];
+
+                sd <= shift_reg[15];  // Output MSB first
+                bit_counter <= (bit_counter == 15) ? 0 : bit_counter + 1;
             end
         end
     end
@@ -496,7 +509,7 @@ endmodule
 
 
 module adsr_generator (
-    input  wire       ena,      // Enable signal
+    input  wire       ena,       // Enable signal
     input  wire       clk,       // Clock
     input  wire       rst_n,     // Active-low reset
     input  wire [7:0] attack,    // Attack value
@@ -506,67 +519,63 @@ module adsr_generator (
     output reg  [7:0] amplitude  // Generated amplitude signal
 );
 
-    reg [3:0] state;
+    (* fsm_encoding = "binary" *) reg [3:0] state;
     reg [7:0] counter;
 
-    localparam STATE_IDLE     = 4'd0;
-    localparam STATE_ATTACK   = 4'd1;
-    localparam STATE_DECAY    = 4'd2;
-    localparam STATE_SUSTAIN  = 4'd3;
-    localparam STATE_RELEASE  = 4'd4;
+    localparam STATE_IDLE    = 4'b0000;
+    localparam STATE_ATTACK  = 4'b0001;
+    localparam STATE_DECAY   = 4'b0010;
+    localparam STATE_SUSTAIN = 4'b0011;
+    localparam STATE_RELEASE = 4'b0100;
 
-  always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            state <= STATE_IDLE;
+            state     <= STATE_IDLE;
             amplitude <= 8'd0;
-            counter <= 8'd0;
+            counter   <= 8'd0;
         end else if (ena) begin
             case (state)
                 STATE_IDLE: begin
                     if (counter == 8'd255) begin
-                        state <= STATE_ATTACK;
+                        state   <= STATE_ATTACK;
                         counter <= 8'd0;
                     end else begin
                         counter <= counter + 1;
                     end
                 end
                 STATE_ATTACK: begin
-                    if (amplitude < attack) begin
+                    if (amplitude < attack)
                         amplitude <= amplitude + 1;
-                    end else begin
+                    else
                         state <= STATE_DECAY;
-                    end
                 end
                 STATE_DECAY: begin
-                    // Use the decay parameter to adjust the rate of decrease
-                    if (amplitude > sustain) begin
+                    if (amplitude > sustain)
                         amplitude <= amplitude - decay;
-                    end else begin
+                    else
                         state <= STATE_SUSTAIN;
-                    end
                 end
                 STATE_SUSTAIN: begin
                     amplitude <= sustain;
                     if (counter == 8'd255) begin
-                        state <= STATE_RELEASE;
+                        state   <= STATE_RELEASE;
                         counter <= 8'd0;
                     end else begin
                         counter <= counter + 1;
                     end
                 end
                 STATE_RELEASE: begin
-    		      if (amplitude > 0) begin
-        		amplitude <= amplitude - rel;
-    			end else begin
-        		state <= STATE_IDLE;
-    		      end
-		   end
-
+                    if (amplitude > 0)
+                        amplitude <= amplitude - rel;
+                    else
+                        state <= STATE_IDLE;
+                end
                 default: state <= STATE_IDLE;
             endcase
         end
     end
 endmodule
+
 
 module triangular_wave_generator (
     input  wire       ena,       // Enable signal
