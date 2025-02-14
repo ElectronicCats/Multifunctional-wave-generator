@@ -183,14 +183,14 @@ module tt_um_waves (
     reg [7:0] scaled_wave; // Final 8-bit result
 
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            temp_wave <= 16'd0;
-            scaled_wave <= 8'd0;
-        end else begin
-            temp_wave <= selected_wave * adsr_amplitude; // Full precision
-            scaled_wave <= temp_wave[15:8];             // Extract upper 8 bits
-        end
+    if (!rst_n) begin
+        temp_wave <= 16'd0;
+        scaled_wave <= 8'd0;
+    end else begin
+        temp_wave <= selected_wave * adsr_amplitude; // Full precision
+        scaled_wave <= temp_wave[15:8] + {7'b0, temp_wave[7]}; // Ensure RHS is 8-bit
     end
+end
 
     // I2S Output
     wire i2s_sck, i2s_ws, i2s_sd;
@@ -232,7 +232,7 @@ module uart_receiver (
     reg receiving;                // UART receiving flag
     reg [1:0] state;              // State machine: 0 = idle, 1 = receiving, 2 = processing
 
-    reg [7:0] temp_byte;          // Temporary register for intermediate calculations
+  reg [7:0] temp_byte;          // Temporary register for intermediate calculations
 
     // State machine states
     localparam IDLE       = 2'b00;
@@ -424,8 +424,8 @@ module sine_wave_generator (
         end else if (ena) begin
             if (clk_div >= freq_select - 1) begin
                 clk_div <= 32'd0;
-                counter <= counter + 1;  
-                wave_out <= sine_table[counter]; // Leer la ROM
+                counter <= (counter == 8'd255) ? 8'd0 : counter + 1; 
+                wave_out <= sine_table[counter]; 
             end else begin
                 clk_div <= clk_div + 1;
             end
