@@ -30,14 +30,13 @@ module tt_um_waves (
     reg [31:0] clk_div;//////////
     reg wave_clk;
   
-    //reg [5:0] freq_select_reg;
 
     // Frequency selection logic
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             freq_divider <= 32'd284091;  // Default to A4 frequency
         end else begin
-            case (freq_select)  // FIXED: Using freq_select directly to avoid delay issues
+            case (freq_select)  
         6'b000000: freq_divider <= 32'd1915712;  // C2 (65.41 Hz)
        	6'b000001: freq_divider <= 32'd1803586;  // C#2/Db2 (69.30 Hz)
         6'b000010: freq_divider <= 32'd1702624;  // D2 (73.42 Hz)
@@ -111,7 +110,7 @@ module tt_um_waves (
         end
     end
 
-    // Clock Divider to generate wave_clk
+    // Clock Divider to generate `wave_clk`
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             clk_div  <= 0;
@@ -132,8 +131,8 @@ module tt_um_waves (
     uart_receiver uart_rx_inst (
         .clk(clk),
         .rst_n(rst_n),
-        .rx(ui_in[0]),  
-        .freq_select(freq_select),  
+        .rx(ui_in[0]),
+        .freq_select(freq_select),
         .wave_select(wave_select),
         .white_noise_en(white_noise_en)
     );
@@ -156,7 +155,7 @@ module tt_um_waves (
     
     // Select waveform output
     reg [7:0] selected_wave;
-  always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
             selected_wave <= 8'd0;
         else begin
@@ -165,13 +164,13 @@ module tt_um_waves (
                 3'b001: selected_wave <= saw_wave_out;
                 3'b010: selected_wave <= sqr_wave_out;
                 3'b011: selected_wave <= sine_wave_out;
-                3'b100: selected_wave <= noise_out; 
+                3'b100: selected_wave <= noise_out;
                 default: selected_wave <= 8'd0;
             endcase
         end
     end
   
-   // ADSR Generator
+    // ADSR Generator
     adsr_generator adsr_gen (
         .clk(clk), .rst_n(rst_n),
         .attack(attack), .decay(decay),
@@ -180,18 +179,29 @@ module tt_um_waves (
     );
 
     // Apply ADSR Envelope
-    reg [7:0] temp_wave;  // Reduced from [15:0] to avoid unused bits
+    reg [15:0] temp_wave;  // Full 16-bit calculation
+    reg [7:0] scaled_wave; // Final 8-bit result
+
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n)
-            temp_wave <= 8'd0;
-        else
-            temp_wave <= (selected_wave * adsr_amplitude) >> 8;
+        if (!rst_n) begin
+            temp_wave <= 16'd0;
+            scaled_wave <= 8'd0;
+        end else begin
+            temp_wave <= selected_wave * adsr_amplitude; // Full precision
+            scaled_wave <= temp_wave[15:8];             // Extract upper 8 bits
+        end
     end
 
     // I2S Output
     wire i2s_sck, i2s_ws, i2s_sd;
     i2s_transmitter i2s_out (
-      .clk(clk), .rst_n(rst_n),.data(temp_wave), .sck(i2s_sck), .ws(i2s_ws),.sd(i2s_sd),.ena(ena)
+        .clk(clk),
+        .rst_n(rst_n),
+        .data(scaled_wave), 
+        .sck(i2s_sck),
+        .ws(i2s_ws),
+        .sd(i2s_sd),
+        .ena(ena)
     );
 
     // Assign I2S Outputs to `uo_out`
