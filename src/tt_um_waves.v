@@ -178,8 +178,8 @@ module tt_um_waves (
         .amplitude(adsr_amplitude), .ena(ena)
     );
 
-    // Apply ADSR Envelope
-    reg [15:0] temp_wave;  // Ensure full precision calculation
+// Apply ADSR Envelope
+reg [15:0] temp_wave;  // Ensure full precision calculation
 reg [7:0] scaled_wave; // Final 8-bit output
 
 always @(posedge clk or negedge rst_n) begin
@@ -188,12 +188,9 @@ always @(posedge clk or negedge rst_n) begin
         scaled_wave <= 8'd0;
     end else begin
         temp_wave <= selected_wave * adsr_amplitude; // Full precision
-        scaled_wave <= temp_wave[15:8] + {7'b0, temp_wave[7]}; // Convert temp_wave[7] to 8-bit
-
+        scaled_wave <= temp_wave[15:8] + (temp_wave[7] ? 8'd1 : 8'd0);
     end
 end
-
-
 
     // I2S Output
     wire i2s_sck, i2s_ws, i2s_sd;
@@ -226,9 +223,10 @@ module uart_receiver (
 );
 
     // Parameters
-    parameter BAUD_TICKS = 2604;  // Baud rate clock ticks (example for 9600 baud)
+    parameter BAUD_TICKS = 2604;  // Baud rate clock ticks 
     
     wire [1:0] unused_temp_bits = temp_byte[7:6];
+  
     // Registers and wires
     reg [31:0] baud_counter;      // Counter for baud rate clock (32 bits to match BAUD_TICKS)
     reg [7:0] received_byte;      // Received byte buffer
@@ -237,6 +235,8 @@ module uart_receiver (
     reg [1:0] state;              // State machine: 0 = idle, 1 = receiving, 2 = processing
 
     reg [7:0] temp_byte; // Ensure enough bits for calculation
+    //wire unused_temp_bits = temp_byte[7:6]; // Prevent lint warning
+
 
     // State machine states
     localparam IDLE       = 2'b00;
@@ -421,13 +421,11 @@ module sine_wave_generator (
     output reg  [7:0] wave_out    // 8-bit sine wave output
 );
 
-//`include "sine_table.mem"
-
     reg [7:0] counter;      // Counter for the sine table index
     reg [31:0] clk_div;     // Clock divider (32-bit)
     reg [7:0] sine_table [0:255]; // Lookup table for sine wave
 
-    // Cargar tabla desde archivo externo en lugar de `initial begin`
+    // Cargar la tabla desde un archivo externo
     initial $readmemh("sine_table.mem", sine_table);
 
     always @(posedge clk or negedge rst_n) begin
@@ -438,16 +436,14 @@ module sine_wave_generator (
         end else if (ena) begin
             if (clk_div >= freq_select - 1) begin
                 clk_div <= 32'd0;
-                counter <= (counter == 8'd255) ? 8'd0 : counter + 1; 
-                wave_out <= sine_table[counter]; 
+                counter <= (counter == 8'd255) ? 8'd0 : counter + 1; // Asegurar wrap-around
+                wave_out <= sine_table[counter]; // Leer la ROM
             end else begin
                 clk_div <= clk_div + 1;
             end
         end
     end
 endmodule
-
-
 
 
 module square_wave_generator (
