@@ -46,14 +46,24 @@ module tb;
   // Load Sine Wave LUT from file
   reg [7:0] sine_table [0:127]; // Adjust size based on file contents
   initial begin
+    integer file;
+    file = $fopen("sine_table.mem", "r");
+    if (file == 0) begin
+        $display("ERROR: sine_table.mem not found! Simulation stopped.");
+        $stop;
+    end
+    $fclose(file);
+    
+    $display("Loading sine_table.mem...");
     $readmemh("sine_table.mem", sine_table);
   end
 
-  // Reset sequence
+  // Reset and enable sequence
   initial begin
     #100;
-    rst_n = 1;    
-    ena = 1;      
+    rst_n = 1;  // Release reset
+    #50;
+    ena = 1;    // Enable I2S transmitter and waveform generation
 
     #200;
     ui_in = 8'h41;  // Arbitrary input
@@ -80,7 +90,7 @@ module tb;
   endtask
 
   // Test sequence for UART commands & I2S validation
-  reg [3:0] j;  // Frequency selection index
+  reg [3:0] j;  // Changed from integer to reg
   initial begin
     #100;
     

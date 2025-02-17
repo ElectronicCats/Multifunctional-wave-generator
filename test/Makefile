@@ -16,8 +16,9 @@ all: $(SIM_BUILD)/sine_table.mem			#
 
 prepare_files: $(SIM_BUILD)/sine_table.mem
 
-$(SIM_BUILD)/sine_table.mem: $(SRC_DIR)/sine_table.mem				#
-	@echo "Copying sine_table.mem to simulation directory..."		
+$(SIM_BUILD)/sine_table.mem: $(SRC_DIR)/sine_table.mem
+	@echo "Copying sine_table.mem to simulation directory..."
+	mkdir -p $(SIM_BUILD)
 	cp $< $@														
 
 else
