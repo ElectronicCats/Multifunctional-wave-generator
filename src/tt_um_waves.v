@@ -118,13 +118,12 @@ module tt_um_waves (
         end else if (ena) begin
             if (clk_div >= freq_divider) begin
                 clk_div  <= 0;
-                wave_clk <= ~wave_clk;  // Ensure wave_clk toggles
+                wave_clk <= ~wave_clk;  // Toggle waveform clock
             end else begin
                 clk_div <= clk_div + 1;
             end
         end
     end
-
 
 
 
@@ -185,10 +184,10 @@ reg [7:0] scaled_wave; // Final 8-bit output
 
 always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-        temp_wave  <= 16'd0;
+        temp_wave <= 16'd0;
         scaled_wave <= 8'd0;
     end else begin
-        temp_wave <= selected_wave * adsr_amplitude;
+        temp_wave <= selected_wave * adsr_amplitude; // Full precision
         scaled_wave <= temp_wave[15:8] + (temp_wave[7] ? 8'd1 : 8'd0);
     end
 end
@@ -386,8 +385,8 @@ module i2s_transmitter (
             ws         <= 0;
             sd         <= 0;
             bit_counter <= 0;
-            shift_reg  <= {data, data};  // Initialize shift register to avoid x values
-        end else begin
+            shift_reg  <= 16'd0;
+        end else if (ena) begin
             // Generate I2S Serial Clock (sck) at the correct frequency
             if (clk_div == (SCK_DIV - 1)) begin
                 clk_div <= 0;
@@ -400,7 +399,7 @@ module i2s_transmitter (
             if (sck == 0) begin  // Shift data on the falling edge of sck
                 if (bit_counter == 0) begin
                     ws <= ~ws;  // Toggle word select every 16 bits
-                    shift_reg <= {data, data};  // Load new data
+                    shift_reg <= {data, data};  // Duplicate 8-bit data for 16-bit format
                 end else begin
                     shift_reg <= shift_reg << 1;  // Shift left to send MSB first
                 end
