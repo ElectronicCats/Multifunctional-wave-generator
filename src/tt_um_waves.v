@@ -576,9 +576,9 @@ endmodule
 
 
 module triangular_wave_generator (
-    input wire clk,        // System clock
-    input wire rst_n,      // Reset (active low)
-    input wire ena,        // Enable signal
+    input  wire       ena,       // Enable signal
+    input  wire       clk,       // Clock
+    input  wire       rst_n,     // Active-low reset
     input  wire [31:0] freq_select, // Frequency selection (32-bit)
     output reg [7:0]  wave_out     // 8-bit triangular wave output
 );
@@ -587,12 +587,6 @@ module triangular_wave_generator (
     reg [7:0] counter;       // 8-bit counter for wave generation
     reg       direction;     // 1: counting up, 0: counting down
     reg [31:0] clk_div;      // 32-bit clock divider
-
-    // Debugging support (optional)
-    initial begin
-        $monitor("Time: %t | ena: %b | clk_div: %d | counter: %d | direction: %b | wave_out: %d", 
-                 $time, ena, clk_div, counter, direction, wave_out);
-    end
 
     // Main logic
     always @(posedge clk or negedge rst_n) begin
@@ -630,6 +624,7 @@ module triangular_wave_generator (
     end
 
 endmodule
+
 
 
 
