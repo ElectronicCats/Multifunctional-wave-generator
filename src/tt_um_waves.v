@@ -370,14 +370,16 @@ module i2s_transmitter (
     output reg sd          // Serial data output
 );
 
-    reg [3:0] bit_counter;  // Counts bits being sent
+    reg [3:0] bit_counter;  // Counts bits being sent (0 to 15)
     reg [15:0] shift_reg;   // Shift register for transmitting data
     reg [7:0] clk_div;      // Clock divider for generating `sck`
 
-    parameter SCK_DIV = 16; // Adjust this based on your clock frequency
+    parameter SCK_DIV = 16; // Clock divider for serial clock generation (adjust as needed)
 
+    // Main logic
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
+            // Reset all signals
             clk_div    <= 0;
             sck        <= 0;
             ws         <= 0;
@@ -385,7 +387,7 @@ module i2s_transmitter (
             bit_counter <= 0;
             shift_reg  <= 16'd0;
         end else if (ena) begin
-            // Generate I2S Serial Clock (sck) at the correct frequency
+            // Generate I2S Serial Clock (sck)
             if (clk_div == (SCK_DIV - 1)) begin
                 clk_div <= 0;
                 sck <= ~sck;  // Toggle sck
@@ -393,55 +395,27 @@ module i2s_transmitter (
                 clk_div <= clk_div + 1;
             end
 
-            // Data Transmission Logic (Shift Register)
-            if (sck == 0) begin  // Shift data on the falling edge of sck
+            // Data Transmission Logic
+            if (sck == 0 && clk_div == 0) begin  // Align logic to sck falling edge
                 if (bit_counter == 0) begin
                     ws <= ~ws;  // Toggle word select every 16 bits
-                    shift_reg <= {data, data};  // Duplicate 8-bit data for 16-bit format
+                    shift_reg <= {data, data};  // Load 8-bit data into 16-bit format
                 end else begin
-                    shift_reg <= shift_reg << 1;  // Shift left to send MSB first
+                    shift_reg <= shift_reg << 1;  // Shift left to transmit MSB first
                 end
 
-                sd <= shift_reg[15];  // Output MSB first
-                bit_counter <= (bit_counter == 15) ? 0 : bit_counter + 1;
+                sd <= shift_reg[15];  // Output MSB on `sd`
+                bit_counter <= (bit_counter == 15) ? 0 : bit_counter + 1;  // Reset or increment counter
             end
+        end else begin
+            // If not enabled, hold outputs steady
+            sck <= 0;
+            ws <= 0;
+            sd <= 0;
         end
     end
 endmodule
 
-
-
-/*module sine_wave_generator (
-    input  wire       ena,        // Enable signal
-    input  wire       clk,        // Clock
-    input  wire       rst_n,      // Active-low reset
-    input  wire [31:0] freq_select, // Frequency selection (32 bits)
-    output reg  [7:0] wave_out    // 8-bit sine wave output
-);
-
-    reg [7:0] counter;      // Counter for the sine table index
-    reg [31:0] clk_div;     // Clock divider (32-bit)
-    reg [7:0] sine_table [0:255]; // Lookup table for sine wave
-
-    // Cargar la tabla desde un archivo externo
-    initial $readmemh("sine_table.mem", sine_table);
-
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            counter  <= 8'd0;
-            clk_div  <= 32'd0;
-            wave_out <= 8'd0;
-        end else if (ena) begin
-            if (clk_div >= freq_select - 1) begin
-                clk_div <= 32'd0;
-                counter <= (counter == 8'd255) ? 8'd0 : counter + 1; // Asegurar wrap-around
-                wave_out <= sine_table[counter]; // Leer la ROM
-            end else begin
-                clk_div <= clk_div + 1;
-            end
-        end
-    end
-endmodule*/
 
 
 module square_wave_generator (
@@ -573,17 +547,25 @@ endmodule
 
 
 module triangular_wave_generator (
-    input  wire       ena,       // Enable signal
-    input  wire       clk,       // Clock
-    input  wire       rst_n,     // Active-low reset
+    input  wire       ena,         // Enable signal
+    input  wire       clk,         // Clock
+    input  wire       rst_n,       // Active-low reset
     input  wire [31:0] freq_select, // Frequency selection (32-bit)
-    output reg [7:0]  wave_out     // 8-bit triangular wave output
+    output reg [7:0]  wave_out,    // 8-bit triangular wave output
+    output wire [3:0] debug        // Debugging signals (optional)
 );
 
     // Internal registers
     reg [7:0] counter;       // 8-bit counter for wave generation
     reg       direction;     // 1: counting up, 0: counting down
     reg [31:0] clk_div;      // 32-bit clock divider
+    reg [31:0] debug_counter;  // Debug counter for signal changes
+
+    // Assign debug signals to external pins (optional)
+    assign debug[0] = wave_clk;        // Clock toggle
+    assign debug[1] = ena;             // Enable signal
+    assign debug[2] = direction;       // Current direction
+    assign debug[3] = wave_out[7];     // MSB of output waveform
 
     // Main logic
     always @(posedge clk or negedge rst_n) begin
@@ -593,9 +575,11 @@ module triangular_wave_generator (
             direction <= 1'b1;  // Start counting up
             clk_div   <= 32'd0;
             wave_out  <= 8'd0;
+            debug_counter <= 32'd0;  // Reset debug counter
         end else if (ena) begin
-            // Increment the clock divider
+            // Increment the clock divider and debug counter
             clk_div <= clk_div + 1;
+            debug_counter <= debug_counter + 1;
 
             // Check if clock divider has reached the frequency threshold
             if (clk_div >= freq_select - 1) begin
@@ -621,6 +605,7 @@ module triangular_wave_generator (
     end
 
 endmodule
+
 
 
 

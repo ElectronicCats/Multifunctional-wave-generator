@@ -1,116 +1,104 @@
-`default_nettype none
 `timescale 1ns / 1ps
-
-/* Testbench for tt_um_waves */
+`default_nettype none
 
 module tb;
 
-  // Dump signals to a VCD file for waveform analysis
-  initial begin
-    $dumpfile("tb.vcd");
-    $dumpvars(0, tb);
-  end
+    // Simulation clock and reset
+    reg clk = 0;
+    always #20 clk = ~clk;  // 25 MHz clock (40 ns period)
 
-  // Clock generation (25 MHz -> 40 ns period)
-  reg clk = 0;
-  always #20 clk = ~clk;  // Toggle every 20 ns -> 25 MHz
+    reg rst_n = 0;  // Active-low reset
+    reg ena = 0;    // Enable signal
 
-  // Reset and enable signals
-  reg rst_n = 0;
-  reg ena = 0;
+    // Inputs and outputs for the DUT
+    reg [7:0] ui_in = 0;  // UART input
+    reg [7:0] uio_in = 0; // User IO (used for ADSR control)
+    wire [7:0] uo_out;    // Output (I2S signals)
+    wire [7:0] uio_out;   // IO output (unused in this design)
+    wire [7:0] uio_oe;    // IO output enable (unused in this design)
 
-  // Inputs and outputs
-  reg [7:0] ui_in = 0;
-  reg [7:0] uio_in = 0;
-  wire [7:0] uo_out;
-  wire [7:0] uio_out;
-  wire [7:0] uio_oe;
+    // I2S signals for verification
+    wire i2s_sck = uo_out[0];
+    wire i2s_ws  = uo_out[1];
+    wire i2s_sd  = uo_out[2];
 
-  // I2S Signals
-  wire i2s_sck = uo_out[0];
-  wire i2s_ws  = uo_out[1];
-  wire i2s_sd  = uo_out[2];
+    // Instantiate the DUT
+    tt_um_waves dut (
+        .ui_in  (ui_in),
+        .uo_out (uo_out),
+        .uio_in (uio_in),
+        .uio_out(uio_out),
+        .uio_oe (uio_oe),
+        .ena    (ena),
+        .clk    (clk),
+        .rst_n  (rst_n)
+    );
 
-  // Instantiate the module under test
-  tt_um_waves dut (
-      .ui_in  (ui_in),
-      .uo_out (uo_out),
-      .uio_in (uio_in),
-      .uio_out(uio_out),
-      .uio_oe (uio_oe),
-      .ena    (ena),
-      .clk    (clk),
-      .rst_n  (rst_n)
-  );
-
-  // Reset and enable sequence
-  initial begin
-    #200;
-    rst_n = 1;  // Release reset
-    #50;
-    ena = 1;    // Enable I2S transmitter and waveform generation
-
-    // Transmit arbitrary data for testing
-    #200;
-    ui_in = 8'h41;
-
-    // Run simulation for a sufficient duration
-    #500000;
-    $finish;
-  end
-
-  // UART transmission simulation
-  task uart_send(input [7:0] data);
-    integer i;
-    begin
-      ui_in[0] = 0;  // Start bit
-      #(25_000_000 / 9600);
-
-      for (i = 0; i < 8; i = i + 1) begin
-        ui_in[0] = (data >> i) & 1;
-        #(25_000_000 / 9600);  // 9600 baud bit time
-      end
-
-      ui_in[0] = 1;  // Stop bit
-      #(25_000_000 / 9600);
-    end
-  endtask
-
-  // Test sequence for UART commands & I2S validation
-  reg [3:0] j;
-  initial begin
-    #300;
-
-    // Test wave selection
-    uart_send(8'h54);  // 'T' for Triangle wave
-    #1000;
-    $display("Triangle Wave Selected - I2S SD: %b", i2s_sd);
-
-    uart_send(8'h53);  // 'S' for Sawtooth wave
-    #1000;
-    $display("Sawtooth Wave Selected - I2S SD: %b", i2s_sd);
-
-    uart_send(8'h51);  // 'Q' for Square wave
-    #1000;
-    $display("Square Wave Selected - I2S SD: %b", i2s_sd);
-
-    // Test frequency selection
-    for (j = 0; j < 10; j = j + 1) begin
-      uart_send(8'h30 + j);
-      #1000;
-      $display("Freq %d Selected - I2S SCK: %b, WS: %b, SD: %b", j, i2s_sck, i2s_ws, i2s_sd);
+    // VCD file for waveform analysis
+    initial begin
+        $dumpfile("tb.vcd");
+        $dumpvars(0, tb);
     end
 
-    // White Noise Test
-    uart_send(8'h4E);  // Enable White Noise
-    #1000;
-    $display("White Noise Enabled - I2S SD: %b", i2s_sd);
+    // Reset and initialization sequence
+    initial begin
+        #100;  // Wait for simulation to settle
+        rst_n = 1;  // Release reset
+        #50;
+        ena = 1;  // Enable the design
 
-    uart_send(8'h46);  // Disable White Noise
-    #1000;
-    $display("White Noise Disabled - I2S SD: %b", i2s_sd);
+        // Send test commands via UART
+        uart_send(8'h54);  // Select triangle wave
+        #1000;
+        uart_send(8'h53);  // Select sawtooth wave
+        #1000;
+        uart_send(8'h51);  // Select square wave
+        #1000;
 
-    $finish;
-  end
+        // Test frequency selection via UART
+        uart_send(8'h30);  // Set frequency 0
+        #1000;
+        uart_send(8'h31);  // Set frequency 1
+        #1000;
+
+        // Enable white noise
+        uart_send(8'h4E);  // Enable white noise
+        #1000;
+        uart_send(8'h46);  // Disable white noise
+        #1000;
+
+        // Simulate ADSR control
+        uio_in = 8'b00000011;  // Example ADSR configuration
+        #10000;
+
+        // Finish simulation
+        $finish;
+    end
+
+    // UART transmission task
+    task uart_send(input [7:0] data);
+        integer i;
+        begin
+            // Start bit
+            ui_in[0] = 0;
+            #1041660;  // Simulate 9600 baud (1/9600s = ~1041660ns at 25 MHz clock)
+
+            // Send 8 data bits (LSB first)
+            for (i = 0; i < 8; i = i + 1) begin
+                ui_in[0] = data[i];
+                #1041660;  // 9600 baud bit time
+            end
+
+            // Stop bit
+            ui_in[0] = 1;
+            #1041660;
+        end
+    endtask
+
+    // Monitor key signals
+    initial begin
+        $monitor("Time: %0dns | wave_select: %h | freq_select: %h | i2s_sck: %b | i2s_ws: %b | i2s_sd: %b",
+                 $time, dut.uart_rx_inst.wave_select, dut.uart_rx_inst.freq_select, i2s_sck, i2s_ws, i2s_sd);
+    end
 
 endmodule
