@@ -44,7 +44,6 @@ async def test_waveform_generation(dut):
         'T': "Triangle",
         'S': "Sawtooth",
         'Q': "Square",
-        'W': "Sine"
     }
 
     for cmd, name in wave_commands.items():

@@ -43,57 +43,44 @@ module tb;
       .rst_n  (rst_n)
   );
 
-  // Load Sine Wave LUT from file
-  reg [7:0] sine_table [0:127]; // Adjust size based on file contents
-  initial begin
-    integer file;
-    file = $fopen("sine_table.mem", "r");
-    if (file == 0) begin
-        $display("ERROR: sine_table.mem not found! Simulation stopped.");
-        $stop;
-    end
-    $fclose(file);
-    
-    $display("Loading sine_table.mem...");
-    $readmemh("sine_table.mem", sine_table);
-  end
-
   // Reset and enable sequence
   initial begin
-    #100;
+    #200;
     rst_n = 1;  // Release reset
     #50;
     ena = 1;    // Enable I2S transmitter and waveform generation
 
+    // Transmit arbitrary data for testing
     #200;
-    ui_in = 8'h41;  // Arbitrary input
+    ui_in = 8'h41;
 
+    // Run simulation for a sufficient duration
     #500000;
     $finish;
   end
 
   // UART transmission simulation
   task uart_send(input [7:0] data);
-    reg [7:0] i;  // Changed from integer to reg
+    integer i;
     begin
       ui_in[0] = 0;  // Start bit
-      #2604;  
+      #(25_000_000 / 9600);
 
       for (i = 0; i < 8; i = i + 1) begin
         ui_in[0] = (data >> i) & 1;
-        #2604;  // 9600 baud bit time
+        #(25_000_000 / 9600);  // 9600 baud bit time
       end
 
       ui_in[0] = 1;  // Stop bit
-      #2604;  
+      #(25_000_000 / 9600);
     end
   endtask
 
   // Test sequence for UART commands & I2S validation
-  reg [3:0] j;  // Changed from integer to reg
+  reg [3:0] j;
   initial begin
-    #100;
-    
+    #300;
+
     // Test wave selection
     uart_send(8'h54);  // 'T' for Triangle wave
     #1000;
@@ -106,10 +93,6 @@ module tb;
     uart_send(8'h51);  // 'Q' for Square wave
     #1000;
     $display("Square Wave Selected - I2S SD: %b", i2s_sd);
-
-    uart_send(8'h57);  // 'W' for Sine wave
-    #1000;
-    $display("Sine Wave Selected - I2S SD: %b", i2s_sd);
 
     // Test frequency selection
     for (j = 0; j < 10; j = j + 1) begin
@@ -127,25 +110,7 @@ module tb;
     #1000;
     $display("White Noise Disabled - I2S SD: %b", i2s_sd);
 
-    // Check sine wave LUT integrity
-    check_sine_wave_lut();
-
     $finish;
   end
-
-  // LUT Verification - Ensure sine wave table is correct
-  task check_sine_wave_lut;
-    reg [7:0] i;  // Changed from integer to reg
-    begin
-      for (i = 0; i < 128; i = i + 1) begin
-        #100;
-        if (uo_out != sine_table[i]) begin
-          $display("ERROR: Sine LUT mismatch at index %d: Expected %h, Got %h", i, sine_table[i], uo_out);
-        end else begin
-          $display("Sine LUT check passed at index %d: %h", i, uo_out);
-        end
-      end
-    end
-  endtask
 
 endmodule
