@@ -144,7 +144,7 @@ module tt_um_waves (
     encoder #(.WIDTH(8), .INCREMENT(1)) release_encoder(.clk(clk), .rst_n(rst_n), .a(uio_in[6]), .b(uio_in[7]), .value(rel), .ena(ena));
 
         // Wave generators with frequency control
-  wire [7:0] tri_wave_out, saw_wave_out, sqr_wave_out/*, sine_wave_out*/;
+    wire [7:0] tri_wave_out, saw_wave_out, sqr_wave_out/*, sine_wave_out*/;
     wire [7:0] noise_out;
   
     triangular_wave_generator triangle_gen (.clk(wave_clk), .rst_n(rst_n), .freq_select(freq_divider), .wave_out(tri_wave_out), .ena(ena));
@@ -245,7 +245,6 @@ module uart_receiver (
     // Synchronize the RX signal to avoid metastability
     reg rx_sync1, rx_sync2;
     always @(posedge clk or negedge rst_n) begin
-        $display("Resetting module at time %t", $time);
         if (!rst_n) begin
             rx_sync1 <= 1'b1;
             rx_sync2 <= 1'b1;
@@ -260,7 +259,6 @@ module uart_receiver (
     // Start bit detection (falling edge on rx_stable)
     reg rx_last;
     always @(posedge clk or negedge rst_n) begin
-        $display("Resetting module at time %t", $time);
         if (!rst_n)
             rx_last <= 1'b1;
         else
@@ -271,7 +269,6 @@ module uart_receiver (
     // Main state machine
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            $display("Resetting module at time %t", $time);
             // Reset all registers
             received_byte <= 8'd0;
             bit_count <= 3'd0;
