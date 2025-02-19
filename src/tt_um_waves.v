@@ -144,13 +144,13 @@ module tt_um_waves (
     encoder #(.WIDTH(8), .INCREMENT(1)) release_encoder(.clk(clk), .rst_n(rst_n), .a(uio_in[6]), .b(uio_in[7]), .value(rel), .ena(ena));
 
         // Wave generators with frequency control
-    wire [7:0] tri_wave_out, saw_wave_out, sqr_wave_out, sine_wave_out;
+  wire [7:0] tri_wave_out, saw_wave_out, sqr_wave_out/*, sine_wave_out*/;
     wire [7:0] noise_out;
   
     triangular_wave_generator triangle_gen (.clk(wave_clk), .rst_n(rst_n), .freq_select(freq_divider), .wave_out(tri_wave_out), .ena(ena));
     sawtooth_wave_generator  saw_gen      (.clk(wave_clk), .rst_n(rst_n), .freq_select(freq_divider), .wave_out(saw_wave_out), .ena(ena));
     square_wave_generator   sqr_gen      (.clk(wave_clk), .rst_n(rst_n), .freq_select(freq_divider), .wave_out(sqr_wave_out), .ena(ena));
-    sine_wave_generator     sine_gen     (.clk(wave_clk), .rst_n(rst_n), .freq_select(freq_divider), .wave_out(sine_wave_out), .ena(ena));
+    //sine_wave_generator     sine_gen     (.clk(wave_clk), .rst_n(rst_n), .freq_select(freq_divider), .wave_out(sine_wave_out), .ena(ena));
     white_noise_generator   noise_gen    (.clk(wave_clk), .rst_n(rst_n), .noise_out(noise_out), .ena(white_noise_en & ena));
     
     // Select waveform output
@@ -163,8 +163,7 @@ module tt_um_waves (
                 3'b000: selected_wave <= tri_wave_out;
                 3'b001: selected_wave <= saw_wave_out;
                 3'b010: selected_wave <= sqr_wave_out;
-                3'b011: selected_wave <= sine_wave_out;
-                3'b100: selected_wave <= noise_out;
+                3'b011: selected_wave <= noise_out;
                 default: selected_wave <= 8'd0;
             endcase
         end
@@ -178,19 +177,19 @@ module tt_um_waves (
         .amplitude(adsr_amplitude), .ena(ena)
     );
 
-// Apply ADSR Envelope
-reg [15:0] temp_wave;  // Ensure full precision calculation
-reg [7:0] scaled_wave; // Final 8-bit output
+    // Apply ADSR Envelope
+    reg [15:0] temp_wave;
+    reg [7:0] scaled_wave;
 
-always @(posedge clk or negedge rst_n) begin
-    if (!rst_n) begin
-        temp_wave <= 16'd0;
-        scaled_wave <= 8'd0;
-    end else begin
-        temp_wave <= selected_wave * adsr_amplitude; // Full precision
-        scaled_wave <= temp_wave[15:8] + (temp_wave[7] ? 8'd1 : 8'd0);
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            temp_wave <= 16'd0;
+            scaled_wave <= 8'd0;
+        end else begin
+            temp_wave <= selected_wave * adsr_amplitude; // Full precision
+            scaled_wave <= temp_wave[15:8] + (temp_wave[7] ? 8'd1 : 8'd0);
+        end
     end
-end
 
     // I2S Output
     wire i2s_sck, i2s_ws, i2s_sd;
@@ -246,6 +245,7 @@ module uart_receiver (
     // Synchronize the RX signal to avoid metastability
     reg rx_sync1, rx_sync2;
     always @(posedge clk or negedge rst_n) begin
+        $display("Resetting module at time %t", $time);
         if (!rst_n) begin
             rx_sync1 <= 1'b1;
             rx_sync2 <= 1'b1;
@@ -260,6 +260,7 @@ module uart_receiver (
     // Start bit detection (falling edge on rx_stable)
     reg rx_last;
     always @(posedge clk or negedge rst_n) begin
+        $display("Resetting module at time %t", $time);
         if (!rst_n)
             rx_last <= 1'b1;
         else
@@ -270,6 +271,7 @@ module uart_receiver (
     // Main state machine
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
+            $display("Resetting module at time %t", $time);
             // Reset all registers
             received_byte <= 8'd0;
             bit_count <= 3'd0;
@@ -317,7 +319,6 @@ module uart_receiver (
                         8'h54: wave_select <= 3'b000;         // 'T' - Triangle wave
                         8'h53: wave_select <= 3'b001;         // 'S' - Sawtooth wave
                         8'h51: wave_select <= 3'b010;         // 'Q' - Square wave
-                        8'h57: wave_select <= 3'b011;         // 'W' - Sine wave
 
                         // Frequency selection (numbers '0'-'9' and letters 'A'-'Z')
                         default: begin
@@ -413,7 +414,7 @@ endmodule
 
 
 
-module sine_wave_generator (
+/*module sine_wave_generator (
     input  wire       ena,        // Enable signal
     input  wire       clk,        // Clock
     input  wire       rst_n,      // Active-low reset
@@ -443,7 +444,7 @@ module sine_wave_generator (
             end
         end
     end
-endmodule
+endmodule*/
 
 
 module square_wave_generator (
@@ -575,48 +576,61 @@ endmodule
 
 
 module triangular_wave_generator (
-    input  wire       ena,       // Enable signal
-    input  wire       clk,       // Clock
-    input  wire       rst_n,     // Active-low reset
-    input  wire [31:0] freq_select, // Frequency selection (now 32 bits)
-    output reg [7:0]  wave_out   // 8-bit triangular wave output
+    input wire clk,        // System clock
+    input wire rst_n,      // Reset (active low)
+    input wire ena,        // Enable signal
+    input  wire [31:0] freq_select, // Frequency selection (32-bit)
+    output reg [7:0]  wave_out     // 8-bit triangular wave output
 );
 
-    reg [7:0] counter;
-    reg       direction;
-    reg [31:0] clk_div; // Now 32 bits
+    // Internal registers
+    reg [7:0] counter;       // 8-bit counter for wave generation
+    reg       direction;     // 1: counting up, 0: counting down
+    reg [31:0] clk_div;      // 32-bit clock divider
 
+    // Debugging support (optional)
+    initial begin
+        $monitor("Time: %t | ena: %b | clk_div: %d | counter: %d | direction: %b | wave_out: %d", 
+                 $time, ena, clk_div, counter, direction, wave_out);
+    end
+
+    // Main logic
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
+            // Reset all registers
             counter   <= 8'd0;
-            direction <= 1'b1;
+            direction <= 1'b1;  // Start counting up
             clk_div   <= 32'd0;
-            wave_out  <= 8'd0;  // Initialize wave_out here
+            wave_out  <= 8'd0;
         end else if (ena) begin
+            // Increment the clock divider
             clk_div <= clk_div + 1;
-            if (clk_div >= freq_select - 1) begin  // Use the full 32-bit range
-                clk_div <= 32'd0;
 
-                // Update the counter based on the direction
+            // Check if clock divider has reached the frequency threshold
+            if (clk_div >= freq_select - 1) begin
+                clk_div <= 32'd0;  // Reset clock divider
+
+                // Update counter based on direction
                 if (direction) begin
                     if (counter < 8'd255) 
-                        counter <= counter + 1;
+                        counter <= counter + 1;  // Count up
                     else 
-                        direction <= 1'b0; // Switch direction to down
+                        direction <= 1'b0;       // Switch direction to count down
                 end else begin
                     if (counter > 8'd0) 
-                        counter <= counter - 1;
+                        counter <= counter - 1;  // Count down
                     else 
-                        direction <= 1'b1; // Switch direction to up
+                        direction <= 1'b1;       // Switch direction to count up
                 end
             end
 
-            // Update wave_out to follow the counter
+            // Update the wave output
             wave_out <= counter;
         end
     end
 
 endmodule
+
 
 
 
