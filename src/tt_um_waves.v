@@ -110,22 +110,27 @@ module tt_um_waves (
         end
     end
 
-    // Clock Divider to generate `wave_clk`
-    always @(posedge clk or negedge rst_n) begin
+    /*always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             clk_div  <= 0;
             wave_clk <= 0;
-        end else if (ena) begin
-            if (clk_div >= freq_divider) begin
-                clk_div  <= 0;
-                wave_clk <= ~wave_clk;  // Toggle waveform clock
-            end else begin
-                clk_div <= clk_div + 1;
-            end
+        end else if (clk_div >= freq_divider) begin
+            clk_div  <= 0;
+            wave_clk <= ~wave_clk;  // Toggle `wave_clk` every `freq_divider` cycles
+        end else begin
+            clk_div <= clk_div + 1;
         end
+    end*/
+
+
+    // Phase accumulator for all waveforms
+    reg [7:0] phase_accum;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            phase_accum <= 8'd0;
+        else if (ena)
+            phase_accum <= phase_accum + freq_select[7:0]; // Increment based on frequency
     end
-
-
 
     // UART Receiver
     uart_receiver uart_rx_inst (
@@ -144,16 +149,18 @@ module tt_um_waves (
     encoder #(.WIDTH(8), .INCREMENT(1), .MAX_VALUE(255), .MIN_VALUE(0)) release_encoder (.clk(clk), .rst_n(rst_n), .a(uio_in[6]), .b(uio_in[7]), .value(rel), .ena(ena));
 
 
-        // Wave generators with frequency control
+        // Wave generators 
     wire [7:0] tri_wave_out, saw_wave_out, sqr_wave_out, sine_wave_out;
     wire [7:0] noise_out;
-  
-    triangular_wave_generator triangle_gen (.clk(wave_clk), .rst_n(rst_n), .freq_select(freq_divider), .wave_out(tri_wave_out), .ena(ena));
-    sawtooth_wave_generator  saw_gen      (.clk(wave_clk), .rst_n(rst_n), .freq_select(freq_divider), .wave_out(saw_wave_out), .ena(ena));
-    square_wave_generator   sqr_gen      (.clk(wave_clk), .rst_n(rst_n), .freq_select(freq_divider), .wave_out(sqr_wave_out), .ena(ena));
-    sine_wave_generator     sine_gen     (.clk(wave_clk), .rst_n(rst_n), .freq_select(freq_divider), .wave_out(sine_wave_out), .ena(ena));
+
+    // Square Wave Generator
+    square_wave_generator sqr_gen        (.clk(clk),.rst_n(rst_n),.ena(ena),.phase(phase_accum), .wave_out(sqr_wave_out));
+    triangular_wave_generator tri_gen   (.clk(clk), .rst_n(rst_n),.ena(ena), .phase(phase_accum), .wave_out(tri_wave_out));
+    sawtooth_wave_generator saw_gen     (.clk(clk),.rst_n(rst_n),.ena(ena),.phase(phase_accum), .wave_out(saw_wave_out));
     white_noise_generator   noise_gen    (.clk(wave_clk), .rst_n(rst_n), .noise_out(noise_out), .ena(white_noise_en & ena));
-    
+    cordic_sine_generator sine_gen       (.clk(clk),.rst_n(rst_n),.ena(ena),.phase(phase_accum), .sine_out(sine_wave_out));
+
+
     // Select waveform output
     reg [7:0] selected_wave;
     always @(posedge clk or negedge rst_n) begin
@@ -414,96 +421,106 @@ endmodule
 
 
 
-module sine_wave_generator (
-    input  wire       ena,        // Enable signal
-    input  wire       clk,        // Clock
-    input  wire       rst_n,      // Active-low reset
-    input  wire [31:0] freq_select, // Frequency selection (32 bits)
-    output reg  [7:0] wave_out    // 8-bit sine wave output
+module cordic_sine_generator (
+    input wire clk,          // System clock
+    input wire rst_n,        // Active-low reset
+    input wire ena,          // Enable signal
+    input wire [7:0] phase,  // Input phase (0-255 mapped to 0-2π)
+    output reg [7:0] sine_out // Output sine wave (8-bit)
 );
 
-    reg [7:0] counter;      // Counter for the sine table index
-    reg [31:0] clk_div;     // Clock divider (32-bit)
-    reg [7:0] sine_table [0:255]; // Lookup table for sine wave
+    // CORDIC Parameters
+    parameter ITERATIONS = 10;
+    parameter SCALE_FACTOR = 16'h26DD;  // 0.60725 in Q1.15 format
 
-    // Cargar la tabla desde un archivo externo
-    initial $readmemh("sine_table.mem", sine_table);
+    // Lookup table for atan(2^-i) in Q1.15 format
+    reg signed [15:0] atan_table [0:ITERATIONS-1];
+    initial begin
+        atan_table[0]  = 16'h3244; // atan(2^0)
+        atan_table[1]  = 16'h1DAC; // atan(2^-1)
+        atan_table[2]  = 16'h0FAD; // atan(2^-2)
+        atan_table[3]  = 16'h07F5; // atan(2^-3)
+        atan_table[4]  = 16'h03FE; // atan(2^-4)
+        atan_table[5]  = 16'h01FF; // atan(2^-5)
+        atan_table[6]  = 16'h00FF; // atan(2^-6)
+        atan_table[7]  = 16'h007F; // atan(2^-7)
+        atan_table[8]  = 16'h003F; // atan(2^-8)
+        atan_table[9]  = 16'h001F; // atan(2^-9)
+    end
+
+    // Registers for CORDIC iterations
+    reg signed [15:0] x, y, z;
+    reg signed [15:0] x_next, y_next, z_next;
+    integer i;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            counter  <= 8'd0;
-            clk_div  <= 32'd0;
-            wave_out <= 8'd0;
+            sine_out <= 8'd128; // Default mid-point
         end else if (ena) begin
-            if (clk_div >= freq_select - 1) begin
-                clk_div <= 32'd0;
-                counter <= (counter == 8'd255) ? 8'd0 : counter + 1; // Asegurar wrap-around
-                wave_out <= sine_table[counter]; // Leer la ROM
-            end else begin
-                clk_div <= clk_div + 1;
+            // Initial vector (1,0) scaled by K (0.60725 in Q1.15)
+            x = SCALE_FACTOR;
+            y = 0;
+            z = {phase, 8'b0}; // Scale phase to Q1.15
+
+            // CORDIC Iterations
+            for (i = 0; i < ITERATIONS; i = i + 1) begin
+                if (z < 0) begin
+                    x_next = x + (y >>> i);
+                    y_next = y - (x >>> i);
+                    z_next = z + atan_table[i];
+                end else begin
+                    x_next = x - (y >>> i);
+                    y_next = y + (x >>> i);
+                    z_next = z - atan_table[i];
+                end
+                x = x_next;
+                y = y_next;
+                z = z_next;
             end
+
+            // Convert output from Q1.15 format to 8-bit
+            sine_out <= y[15:8] + 8'd128; // Shift and bias for unsigned output
         end
     end
 endmodule
+
 
 
 module square_wave_generator (
-    input  wire       ena,       // Enable signal
-    input  wire       clk,       // Clock
-    input  wire       rst_n,     // Active-low reset
-    input  wire [31:0] freq_select, // Frequency selection (now 32 bits)
-    output reg  [7:0] wave_out   // 8-bit square wave output
+    input  wire       ena,        
+    input  wire       clk,        
+    input  wire       rst_n,      
+    input  wire [7:0] phase,  // Use phase_accum instead of wave_clk
+    output reg  [7:0] wave_out    
 );
 
-    reg wave_state;
-    reg [31:0] clk_div; // 32-bit clock divider
-
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            clk_div <= 32'd0;
-            wave_state <= 1'b0;
+        if (!rst_n)
             wave_out <= 8'd0;
-        end else if (ena) begin
-            if (clk_div >= freq_select - 1) begin  // Solo actualizar cuando se cumple la frecuencia
-                clk_div <= 32'd0;
-                wave_state <= ~wave_state; // Cambiar estado de la onda
-                wave_out <= wave_state ? 8'd255 : 8'd0; // Alternar entre 0 y 255
-            end else begin
-                clk_div <= clk_div + 1;
-            end
-        end
+        else if (ena)
+            wave_out <= phase[7] ? 8'd255 : 8'd0; // High for first half, low for second half
     end
 endmodule
+
 
 
 
 module sawtooth_wave_generator (
-    input  wire       ena,        // Enable signal
-    input  wire       clk,        // Clock
-    input  wire       rst_n,      // Active-low reset
-    input  wire [31:0] freq_select, // Frequency selection (32 bits)
-    output reg  [7:0] wave_out    // 8-bit sawtooth wave output
+    input  wire       ena,        
+    input  wire       clk,        
+    input  wire       rst_n,      
+    input  wire [7:0] phase,  // Use phase_accum instead of wave_clk
+    output reg  [7:0] wave_out    
 );
 
-    reg [7:0] counter;
-    reg [31:0] clk_div; // 32-bit clock divider
-
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            counter  <= 8'd0;
-            clk_div  <= 32'd0;
+        if (!rst_n)
             wave_out <= 8'd0;
-        end else if (ena) begin
-            if (clk_div >= freq_select - 1) begin
-                clk_div <= 32'd0;
-                counter <= (counter == 8'd255) ? 8'd0 : counter + 1; // Evita desbordamiento
-                wave_out <= counter;
-            end else begin
-                clk_div <= clk_div + 1;
-            end
-        end
+        else if (ena)
+            wave_out <= phase; // Directly use phase as sawtooth wave
     end
 endmodule
+
 
 
 module adsr_generator (
@@ -584,49 +601,21 @@ endmodule
 
 
 module triangular_wave_generator (
-    input  wire       ena,       // Enable signal
-    input  wire       clk,       // Clock
-    input  wire       rst_n,     // Active-low reset
-    input  wire [31:0] freq_select, // Frequency selection (now 32 bits)
-    output reg [7:0]  wave_out   // 8-bit triangular wave output
+    input  wire       ena,        
+    input  wire       clk,        
+    input  wire       rst_n,      
+    input  wire [7:0] phase,  // Use phase_accum instead of wave_clk
+    output reg  [7:0] wave_out    
 );
 
-    reg [7:0] counter;
-    reg       direction;
-    reg [31:0] clk_div; // 32-bit clock divider
-
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            counter   <= 8'd0;
-            direction <= 1'b1; // Inicia incrementando
-            clk_div   <= 32'd0;
-            wave_out  <= 8'd0;
-        end else if (ena) begin
-            if (clk_div >= freq_select - 1) begin
-                clk_div <= 32'd0;
-
-                // Verify limits
-                if (counter == 8'd255) begin
-                    direction <= 1'b0; // Change to decrement
-                end else if (counter == 8'd0) begin
-                    direction <= 1'b1; // Change to increment
-                end
-
-                // Counter update based on dircetion
-                if (direction) begin
-                    counter <= counter + 1; // Increment
-                end else begin
-                    counter <= counter - 1; // Decrement
-                end
-
-                // Update output
-                wave_out <= counter;
-            end else begin
-                clk_div <= clk_div + 1;
-            end
-        end
+        if (!rst_n)
+            wave_out <= 8'd0;
+        else if (ena)
+            wave_out <= phase[7] ? (8'd255 - phase[6:0] << 1) : (phase[6:0] << 1);
     end
 endmodule
+
 
 module encoder #(
     parameter WIDTH = 8,          // Ancho del contador

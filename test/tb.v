@@ -43,21 +43,6 @@ module tb;
       .rst_n  (rst_n)
   );
 
-  // Load Sine Wave LUT from file
-  reg [7:0] sine_table [0:127];
-  initial begin
-    integer file;
-    file = $fopen("sine_table.mem", "r");
-    if (file == 0) begin
-        $display("ERROR: sine_table.mem not found! Simulation stopped.");
-        $stop;
-    end
-    $fclose(file);
-    
-    $display("Loading sine_table.mem...");
-    $readmemh("sine_table.mem", sine_table);
-  end
-
   // Reset and enable sequence
   initial begin
     #100;
@@ -87,7 +72,7 @@ module tb;
       ui_in[0] = 1;  // Stop bit
       #2604;
 
-      // Esperar a que el módulo procese el dato antes del siguiente envío
+      // Wait for processing before sending the next command
       #5000;
     end
   endtask
@@ -100,19 +85,19 @@ module tb;
     // Test wave selection
     uart_send(8'h54);  // 'T' for Triangle wave
     #2000;
-    assert (uo_out[2] !== 8'b0) else $display("ERROR: Triangle wave not generated!");
+    assert (uo_out !== 8'b0) else $display("ERROR: Triangle wave not generated!");
 
     uart_send(8'h53);  // 'S' for Sawtooth wave
     #2000;
-    assert (uo_out[2] !== 8'b0) else $display("ERROR: Sawtooth wave not generated!");
+    assert (uo_out !== 8'b0) else $display("ERROR: Sawtooth wave not generated!");
 
     uart_send(8'h51);  // 'Q' for Square wave
     #2000;
-    assert (uo_out[2] !== 8'b0) else $display("ERROR: Square wave not generated!");
+    assert (uo_out !== 8'b0) else $display("ERROR: Square wave not generated!");
 
-    uart_send(8'h57);  // 'W' for Sine wave
+    uart_send(8'h57);  // 'W' for Sine wave (now using CORDIC)
     #2000;
-    assert (uo_out[2] !== 8'b0) else $display("ERROR: Sine wave not generated!");
+    assert (uo_out !== 8'b0) else $display("ERROR: Sine wave not generated!");
 
     // Test frequency selection
     for (j = 0; j < 10; j = j + 1) begin
@@ -124,31 +109,13 @@ module tb;
     // White Noise Test
     uart_send(8'h4E);  // Enable White Noise
     #2000;
-    assert (uo_out[2] !== 8'b0) else $display("ERROR: White noise not generated!");
+    assert (uo_out !== 8'b0) else $display("ERROR: White noise not generated!");
 
     uart_send(8'h46);  // Disable White Noise
     #2000;
     $display("White Noise Disabled - I2S SD: %b", i2s_sd);
 
-    // Check sine wave LUT integrity
-    check_sine_wave_lut();
-
     $finish;
   end
-
-  // LUT Verification - Ensure sine wave table is correct
-  task check_sine_wave_lut;
-    reg [7:0] i;
-    begin
-      for (i = 0; i < 128; i = i + 1) begin
-        #100;
-        if (uo_out != sine_table[i]) begin
-          $display("ERROR: Sine LUT mismatch at index %d: Expected %h, Got %h", i, sine_table[i], uo_out);
-        end else begin
-          $display("Sine LUT check passed at index %d: %h", i, uo_out);
-        end
-      end
-    end
-  endtask
 
 endmodule
