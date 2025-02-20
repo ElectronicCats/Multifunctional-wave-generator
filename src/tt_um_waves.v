@@ -568,7 +568,7 @@ module adsr_generator (
                 end
                 STATE_RELEASE: begin
                     if (amplitude > 8'd0) begin
-                        // Decremento suave hacia 0
+                        // Decremento hacia 0
                         amplitude <= amplitude - (amplitude >> rel[3:0]);
                     end else begin
                         amplitude <= 8'd0; // Asegurar que no sea negativo

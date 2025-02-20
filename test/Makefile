@@ -5,26 +5,31 @@
 SIM ?= icarus
 TOPLEVEL_LANG ?= verilog
 SRC_DIR = $(PWD)/../src
-PROJECT_SOURCES =  tt_um_waves.v sine_table.mem
+PROJECT_SOURCES = tt_um_waves.v sine_table.mem
+
+# Debugging: Print the value of SRC_DIR
+@echo "SRC_DIR is: $(SRC_DIR)"
 
 ifneq ($(GATES),yes)
 
 # RTL simulation:
-SIM_BUILD				= sim_build/rtl
+SIM_BUILD = sim_build/rtl
 VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES))
-all: $(SIM_BUILD)/sine_table.mem			#
+
+# Ensure sine_table.mem is copied to the correct simulation directory
+all: $(SIM_BUILD)/sine_table.mem
 
 prepare_files: $(SIM_BUILD)/sine_table.mem
 
 $(SIM_BUILD)/sine_table.mem: $(SRC_DIR)/sine_table.mem
 	@echo "Copying sine_table.mem to simulation directory..."
 	mkdir -p $(SIM_BUILD)
-	cp $< $@														
+	cp $< $@
 
 else
 
 # Gate level simulation:
-SIM_BUILD				= sim_build/gl
+SIM_BUILD = sim_build/gl
 COMPILE_ARGS    += -DGL_TEST
 COMPILE_ARGS    += -DFUNCTIONAL
 COMPILE_ARGS    += -DUSE_POWER_PINS
@@ -39,7 +44,7 @@ VERILOG_SOURCES += $(PWD)/gate_level_netlist.v
 endif
 
 # Allow sharing configuration between design and testbench via `include`:
-COMPILE_ARGS 		+= -I$(SRC_DIR)
+COMPILE_ARGS += -I$(SRC_DIR)
 
 # Include the testbench sources:
 VERILOG_SOURCES += $(PWD)/tb.v
