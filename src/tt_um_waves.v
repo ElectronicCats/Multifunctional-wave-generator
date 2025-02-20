@@ -138,10 +138,11 @@ module tt_um_waves (
     );
 
     // Encoders for ADSR
-    encoder #(.WIDTH(8), .INCREMENT(1)) attack_encoder (.clk(clk), .rst_n(rst_n), .a(uio_in[0]), .b(uio_in[1]), .value(attack), .ena(ena));
-    encoder #(.WIDTH(8), .INCREMENT(1)) decay_encoder  (.clk(clk), .rst_n(rst_n), .a(uio_in[2]), .b(uio_in[3]), .value(decay), .ena(ena));
-    encoder #(.WIDTH(8), .INCREMENT(1)) sustain_encoder(.clk(clk), .rst_n(rst_n), .a(uio_in[4]), .b(uio_in[5]), .value(sustain), .ena(ena));
-    encoder #(.WIDTH(8), .INCREMENT(1)) release_encoder(.clk(clk), .rst_n(rst_n), .a(uio_in[6]), .b(uio_in[7]), .value(rel), .ena(ena));
+    encoder #(.WIDTH(8), .INCREMENT(1), .MAX_VALUE(255), .MIN_VALUE(0)) attack_encoder (.clk(clk), .rst_n(rst_n), .a(uio_in[0]), .b(uio_in[1]), .value(attack), .ena(ena));
+    encoder #(.WIDTH(8), .INCREMENT(1), .MAX_VALUE(255), .MIN_VALUE(0)) decay_encoder (.clk(clk), .rst_n(rst_n), .a(uio_in[2]), .b(uio_in[3]), .value(decay), .ena(ena));
+    encoder #(.WIDTH(8), .INCREMENT(1), .MAX_VALUE(255), .MIN_VALUE(0)) sustain_encoder (.clk(clk), .rst_n(rst_n), .a(uio_in[4]), .b(uio_in[5]), .value(sustain), .ena(ena));
+    encoder #(.WIDTH(8), .INCREMENT(1), .MAX_VALUE(255), .MIN_VALUE(0)) release_encoder (.clk(clk), .rst_n(rst_n), .a(uio_in[6]), .b(uio_in[7]), .value(rel), .ena(ena));
+
 
         // Wave generators with frequency control
     wire [7:0] tri_wave_out, saw_wave_out, sqr_wave_out, sine_wave_out;
@@ -455,23 +456,25 @@ module square_wave_generator (
 );
 
     reg wave_state;
-    reg [31:0] clk_div; // Now 32 bits
+    reg [31:0] clk_div; // 32-bit clock divider
 
-  always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             clk_div <= 32'd0;
             wave_state <= 1'b0;
             wave_out <= 8'd0;
         end else if (ena) begin
-            clk_div <= clk_div + 1;
-            if (clk_div >= freq_select - 1) begin  // Use the full 32-bit range
+            if (clk_div >= freq_select - 1) begin  // Solo actualizar cuando se cumple la frecuencia
                 clk_div <= 32'd0;
-                wave_state <= ~wave_state;
-                wave_out <= wave_state ? 8'd255 : 8'd0; // Toggle between 0 and 255
+                wave_state <= ~wave_state; // Cambiar estado de la onda
+                wave_out <= wave_state ? 8'd255 : 8'd0; // Alternar entre 0 y 255
+            end else begin
+                clk_div <= clk_div + 1;
             end
         end
     end
 endmodule
+
 
 
 module sawtooth_wave_generator (
@@ -489,20 +492,18 @@ module sawtooth_wave_generator (
         if (!rst_n) begin
             counter  <= 8'd0;
             clk_div  <= 32'd0;
-            wave_out <= 8'd0; // Initialize the output with the reset
+            wave_out <= 8'd0;
         end else if (ena) begin
-            clk_div <= clk_div + 1;
-            if (clk_div >= freq_select - 1) begin // Uses all the 32-bits range
+            if (clk_div >= freq_select - 1) begin
                 clk_div <= 32'd0;
-                counter <= counter + 1; // Increments the counter
+                counter <= (counter == 8'd255) ? 8'd0 : counter + 1; // Evita desbordamiento
+                wave_out <= counter;
+            end else begin
+                clk_div <= clk_div + 1;
             end
-            wave_out <= counter; //Asign the output
         end
     end
 endmodule
-
-
-
 
 
 module adsr_generator (
@@ -541,19 +542,23 @@ module adsr_generator (
                     end
                 end
                 STATE_ATTACK: begin
-                    if (amplitude < attack)
-                        amplitude <= amplitude + 1;
-                    else
+                    if (amplitude < 8'd255) begin
+                        amplitude <= amplitude + (attack >> 4); // Incremento proporcional al ataque
+                    end else begin
+                        amplitude <= 8'd255; // Límite superior
                         state <= STATE_DECAY;
+                    end
                 end
                 STATE_DECAY: begin
-                    if (amplitude > sustain)
-                        amplitude <= amplitude - decay;
-                    else
+                    if (amplitude > sustain) begin
+                        amplitude <= amplitude - ((amplitude - sustain) >> decay[3:0]); // Decremento suave hacia el nivel de sostenido
+                    end else begin
+                        amplitude <= sustain;
                         state <= STATE_SUSTAIN;
+                    end
                 end
                 STATE_SUSTAIN: begin
-                    amplitude <= sustain;
+                    amplitude <= sustain; // Mantén el nivel de sostenido
                     if (counter == 8'd255) begin
                         state   <= STATE_RELEASE;
                         counter <= 8'd0;
@@ -562,16 +567,20 @@ module adsr_generator (
                     end
                 end
                 STATE_RELEASE: begin
-                    if (amplitude > 0)
-                        amplitude <= amplitude - rel;
-                    else
+                    if (amplitude > 8'd0) begin
+                        // Decremento suave hacia 0
+                        amplitude <= amplitude - (amplitude >> rel[3:0]);
+                    end else begin
+                        amplitude <= 8'd0; // Asegurar que no sea negativo
                         state <= STATE_IDLE;
+                    end
                 end
                 default: state <= STATE_IDLE;
             endcase
         end
     end
 endmodule
+
 
 
 module triangular_wave_generator (
@@ -584,68 +593,82 @@ module triangular_wave_generator (
 
     reg [7:0] counter;
     reg       direction;
-    reg [31:0] clk_div; // Now 32 bits
+    reg [31:0] clk_div; // 32-bit clock divider
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             counter   <= 8'd0;
-            direction <= 1'b1;
+            direction <= 1'b1; // Inicia incrementando
             clk_div   <= 32'd0;
-            wave_out  <= 8'd0;  // Initialize wave_out here
+            wave_out  <= 8'd0;
         end else if (ena) begin
-            clk_div <= clk_div + 1;
-            if (clk_div >= freq_select - 1) begin  // Use the full 32-bit range
+            if (clk_div >= freq_select - 1) begin
                 clk_div <= 32'd0;
 
-                // Update the counter based on the direction
-                if (direction) begin
-                    if (counter < 8'd255) 
-                        counter <= counter + 1;
-                    else 
-                        direction <= 1'b0; // Switch direction to down
-                end else begin
-                    if (counter > 8'd0) 
-                        counter <= counter - 1;
-                    else 
-                        direction <= 1'b1; // Switch direction to up
+                // Verify limits
+                if (counter == 8'd255) begin
+                    direction <= 1'b0; // Change to decrement
+                end else if (counter == 8'd0) begin
+                    direction <= 1'b1; // Change to increment
                 end
-            end
 
-            // Update wave_out to follow the counter
-            wave_out <= counter;
+                // Counter update based on dircetion
+                if (direction) begin
+                    counter <= counter + 1; // Increment
+                end else begin
+                    counter <= counter - 1; // Decrement
+                end
+
+                // Update output
+                wave_out <= counter;
+            end else begin
+                clk_div <= clk_div + 1;
+            end
         end
     end
-
 endmodule
 
-
-
 module encoder #(
-    parameter WIDTH = 8,
-    parameter INCREMENT = 1'b1
+    parameter WIDTH = 8,          // Ancho del contador
+    parameter INCREMENT = 1'b1,   // Valor de incremento
+    parameter MAX_VALUE = (1 << WIDTH) - 1, // Valor máximo (ej. 255 para 8 bits)
+    parameter MIN_VALUE = 0       // Valor mínimo (por defecto 0)
 )(
-    input ena,
-    input clk,
-    input rst_n,
-    input a,
-    input b,
-    output reg [WIDTH-1:0] value
+    input wire ena,               // Habilitación
+    input wire clk,               // Reloj
+    input wire rst_n,             // Reset activo bajo
+    input wire a,                 // Entrada A del encoder
+    input wire b,                 // Entrada B del encoder
+    output reg [WIDTH-1:0] value  // Salida del contador
 );
 
     reg old_a, old_b;
 
-  always @(posedge clk or negedge rst_n) begin
+    // Estados posibles en el codificador en cuadratura
+    wire [3:0] transition;
+    assign transition = {a, old_a, b, old_b}; // Combina los estados actuales y anteriores
+
+    always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            old_a <= 0;
-            old_b <= 0;
-            value <= 0;
+            old_a <= 1'b0;
+            old_b <= 1'b0;
+            value <= {WIDTH{1'b0}}; // Inicializa el contador en el mínimo
         end else if (ena) begin
+            // Guarda los estados anteriores
             old_a <= a;
             old_b <= b;
-            case ({a, old_a, b, old_b})
-                4'b1000, 4'b0111: value <= value + INCREMENT;
-                4'b0010, 4'b1101: value <= value - INCREMENT;
-                default: value <= value;
+
+            // Manejo de las transiciones con límites
+            case (transition)
+                4'b1000, 4'b0110, 4'b0011, 4'b1101: begin
+                    if (value < MAX_VALUE)  // Evita superar el límite superior
+                        value <= value + INCREMENT;
+                end
+                4'b0001, 4'b1011, 4'b1110, 4'b0100: begin
+                    if (value > MIN_VALUE)  // Evita caer por debajo del límite inferior
+                        value <= value - INCREMENT;
+                end
+                default: value <= value; // Mantén el valor para transiciones no válidas
             endcase
         end
     end
