@@ -5,8 +5,8 @@
 SIM ?= icarus
 TOPLEVEL_LANG ?= verilog
 
-# Update to use absolute or corrected path
-SRC_DIR = $(PWD)/src
+# Update SRC_DIR path to resolve correctly
+SRC_DIR = $(shell pwd)/src
 PROJECT_SOURCES = tt_um_waves.v sine_table.mem
 
 # Debugging: Print the value of SRC_DIR
