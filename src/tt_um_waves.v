@@ -438,12 +438,34 @@ module cordic_sine_generator (
     // CORDIC parameters
     reg signed [15:0] x, y, z;
     reg [3:0] i; // 4-bit index for iterations
+    reg signed [15:0] atan_value; 
 
     localparam [15:0] SCALE_FACTOR = 16'h26DD;  // Precomputed scale factor
 
-    // Precomputed atan values
-    localparam signed [15:0] atan_table [0:7] = '{16'h3243, 16'h1DAC, 16'h0FAB, 16'h07F5, 
-                                                  16'h03FE, 16'h01FF, 16'h00FF, 16'h007F};
+    // Precomputed atan values as individual parameters
+    localparam signed [15:0] atan_table_0 = 16'h3243;
+    localparam signed [15:0] atan_table_1 = 16'h1DAC;
+    localparam signed [15:0] atan_table_2 = 16'h0FAB;
+    localparam signed [15:0] atan_table_3 = 16'h07F5;
+    localparam signed [15:0] atan_table_4 = 16'h03FE;
+    localparam signed [15:0] atan_table_5 = 16'h01FF;
+    localparam signed [15:0] atan_table_6 = 16'h00FF;
+    localparam signed [15:0] atan_table_7 = 16'h007F;
+
+    // Look-up table for atan values
+    always @(*) begin
+        case (i[2:0]) // Use 3-bit index
+            3'b000: atan_value = atan_table_0;
+            3'b001: atan_value = atan_table_1;
+            3'b010: atan_value = atan_table_2;
+            3'b011: atan_value = atan_table_3;
+            3'b100: atan_value = atan_table_4;
+            3'b101: atan_value = atan_table_5;
+            3'b110: atan_value = atan_table_6;
+            3'b111: atan_value = atan_table_7;
+            default: atan_value = 16'd0; // Default case for safety
+        endcase
+    end
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -456,11 +478,11 @@ module cordic_sine_generator (
                 if (z[15]) begin
                     x <= x + (y >>> i);
                     y <= y - (x >>> i);
-                    z <= z - atan_table[i[2:0]]; // Fix: Mask `i` to 3 bits
+                    z <= z - atan_value;
                 end else begin
                     x <= x - (y >>> i);
                     y <= y + (x >>> i);
-                    z <= z + atan_table[i[2:0]]; // Fix: Mask `i` to 3 bits
+                    z <= z + atan_value;
                 end
                 i <= i + 1;
             end else begin
@@ -469,6 +491,9 @@ module cordic_sine_generator (
         end
     end
 endmodule
+
+
+
 
 
 
