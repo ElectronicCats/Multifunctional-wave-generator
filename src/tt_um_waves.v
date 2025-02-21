@@ -15,7 +15,9 @@ module tt_um_waves (
     wire [5:0] freq_select;
     wire [2:0] wave_select;
     wire       white_noise_en;
-  wire [6:0] unused_temp_wave = temp_wave[6:0];
+    (* keep *) reg [15:0] temp_wave; 
+    wire [6:0] unused_temp_wave = temp_wave[6:0];
+
   
     wire unused_ui_in;
     assign unused_ui_in = |ui_in[7:1];  // OR-reduction of unused bits
@@ -110,7 +112,7 @@ module tt_um_waves (
         end
     end
 
-    /*always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             clk_div  <= 0;
             wave_clk <= 0;
@@ -120,16 +122,16 @@ module tt_um_waves (
         end else begin
             clk_div <= clk_div + 1;
         end
-    end*/
+    end
 
 
-    // Phase accumulator for all waveforms
+        // Phase accumulator for all waveforms
     reg [7:0] phase_accum;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
             phase_accum <= 8'd0;
         else if (ena)
-            phase_accum <= phase_accum + freq_select[7:0]; // Increment based on frequency
+            phase_accum <= phase_accum + {2'b00, freq_select}; // Extend to 8 bits safely
     end
 
     // UART Receiver
@@ -154,15 +156,15 @@ module tt_um_waves (
     wire [7:0] noise_out;
 
     // Square Wave Generator
-    square_wave_generator sqr_gen        (.clk(clk),.rst_n(rst_n),.ena(ena),.phase(phase_accum), .wave_out(sqr_wave_out));
-    triangular_wave_generator tri_gen   (.clk(clk), .rst_n(rst_n),.ena(ena), .phase(phase_accum), .wave_out(tri_wave_out));
-    sawtooth_wave_generator saw_gen     (.clk(clk),.rst_n(rst_n),.ena(ena),.phase(phase_accum), .wave_out(saw_wave_out));
-    white_noise_generator   noise_gen    (.clk(wave_clk), .rst_n(rst_n), .noise_out(noise_out), .ena(white_noise_en & ena));
-    cordic_sine_generator sine_gen       (.clk(clk),.rst_n(rst_n),.ena(ena),.phase(phase_accum), .sine_out(sine_wave_out));
+    square_wave_generator sqr_gen (.clk(clk), .rst_n(rst_n), .ena(ena), .phase(phase_accum), .wave_out(sqr_wave_out));
+    triangular_wave_generator tri_gen (.clk(clk), .rst_n(rst_n), .ena(ena), .phase(phase_accum), .wave_out(tri_wave_out));
+    sawtooth_wave_generator saw_gen (.clk(clk), .rst_n(rst_n), .ena(ena), .phase(phase_accum), .wave_out(saw_wave_out));
+    white_noise_generator noise_gen (.clk(clk), .rst_n(rst_n), .noise_out(noise_out), .ena(white_noise_en & ena));
+    cordic_sine_generator sine_gen (.clk(clk), .rst_n(rst_n), .ena(ena), .phase(phase_accum), .sine_out(sine_wave_out));
 
 
     // Select waveform output
-    reg [7:0] selected_wave;
+        reg [7:0] selected_wave;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
             selected_wave <= 8'd0;
@@ -177,7 +179,7 @@ module tt_um_waves (
             endcase
         end
     end
-  
+
     // ADSR Generator
     adsr_generator adsr_gen (
         .clk(clk), .rst_n(rst_n),
@@ -186,19 +188,22 @@ module tt_um_waves (
         .amplitude(adsr_amplitude), .ena(ena)
     );
 
-// Apply ADSR Envelope
-reg [15:0] temp_wave;  // Ensure full precision calculation
-reg [7:0] scaled_wave; // Final 8-bit output
+    // Apply ADSR Envelope
+    (* keep *) reg [7:0] scaled_wave;
 
-always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-        temp_wave <= 16'd0;
+        temp_wave   <= 16'd0;
         scaled_wave <= 8'd0;
     end else begin
-        temp_wave <= selected_wave * adsr_amplitude; // Full precision
-        scaled_wave <= temp_wave[15:8] + (temp_wave[7] ? 8'd1 : 8'd0);
+        temp_wave   <= selected_wave * adsr_amplitude; // Full precision multiplication
+        scaled_wave <= (temp_wave[15:8]) + (temp_wave[7] ? 8'd1 : 8'd0); // Explicit truncation & rounding
     end
 end
+
+
+
+
 
     // I2S Output
     wire i2s_sck, i2s_ws, i2s_sd;
@@ -219,6 +224,7 @@ end
     assign uo_out[7:3] = 5'b00000;  // Ensure upper bits are not floating
     assign uio_out = 8'b0;     
     assign uio_oe = 8'b0;      
+
 endmodule
 
 module uart_receiver (
@@ -422,64 +428,44 @@ endmodule
 
 
 module cordic_sine_generator (
-    input wire clk,          // System clock
-    input wire rst_n,        // Active-low reset
-    input wire ena,          // Enable signal
-    input wire [7:0] phase,  // Input phase (0-255 mapped to 0-2π)
-    output reg [7:0] sine_out // Output sine wave (8-bit)
+    input  wire clk,
+    input  wire rst_n,
+    input  wire ena,
+    input  wire [7:0] phase,
+    output reg  [7:0] sine_out
 );
 
-    // CORDIC Parameters
-    parameter ITERATIONS = 10;
-    parameter SCALE_FACTOR = 16'h26DD;  // 0.60725 in Q1.15 format
-
-    // Lookup table for atan(2^-i) in Q1.15 format
-    reg signed [15:0] atan_table [0:ITERATIONS-1];
-    initial begin
-        atan_table[0]  = 16'h3244; // atan(2^0)
-        atan_table[1]  = 16'h1DAC; // atan(2^-1)
-        atan_table[2]  = 16'h0FAD; // atan(2^-2)
-        atan_table[3]  = 16'h07F5; // atan(2^-3)
-        atan_table[4]  = 16'h03FE; // atan(2^-4)
-        atan_table[5]  = 16'h01FF; // atan(2^-5)
-        atan_table[6]  = 16'h00FF; // atan(2^-6)
-        atan_table[7]  = 16'h007F; // atan(2^-7)
-        atan_table[8]  = 16'h003F; // atan(2^-8)
-        atan_table[9]  = 16'h001F; // atan(2^-9)
-    end
-
-    // Registers for CORDIC iterations
+    // CORDIC parameters
     reg signed [15:0] x, y, z;
-    reg signed [15:0] x_next, y_next, z_next;
-    integer i;
+    reg [3:0] i; // 4-bit index for iterations
+
+    localparam [15:0] SCALE_FACTOR = 16'h26DD;  // Precomputed scale factor
+
+    // Precomputed atan values
+    localparam signed [15:0] atan_table [0:7] = '{16'h3243, 16'h1DAC, 16'h0FAB, 16'h07F5, 
+                                                  16'h03FE, 16'h01FF, 16'h00FF, 16'h007F};
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            sine_out <= 8'd128; // Default mid-point
+            x <= SCALE_FACTOR;
+            y <= 16'd0;
+            z <= {phase, 8'b0};
+            i <= 4'b0000;
         end else if (ena) begin
-            // Initial vector (1,0) scaled by K (0.60725 in Q1.15)
-            x = SCALE_FACTOR;
-            y = 0;
-            z = {phase, 8'b0}; // Scale phase to Q1.15
-
-            // CORDIC Iterations
-            for (i = 0; i < ITERATIONS; i = i + 1) begin
-                if (z < 0) begin
-                    x_next = x + (y >>> i);
-                    y_next = y - (x >>> i);
-                    z_next = z + atan_table[i];
+            if (i < 4'b1000) begin // Limit iterations to 8
+                if (z[15]) begin
+                    x <= x + (y >>> i);
+                    y <= y - (x >>> i);
+                    z <= z - atan_table[i[2:0]]; // Fix: Mask `i` to 3 bits
                 end else begin
-                    x_next = x - (y >>> i);
-                    y_next = y + (x >>> i);
-                    z_next = z - atan_table[i];
+                    x <= x - (y >>> i);
+                    y <= y + (x >>> i);
+                    z <= z + atan_table[i[2:0]]; // Fix: Mask `i` to 3 bits
                 end
-                x = x_next;
-                y = y_next;
-                z = z_next;
+                i <= i + 1;
+            end else begin
+                sine_out <= y[15:8]; // Output the final sine value after 8 iterations
             end
-
-            // Convert output from Q1.15 format to 8-bit
-            sine_out <= y[15:8] + 8'd128; // Shift and bias for unsigned output
         end
     end
 endmodule
@@ -534,7 +520,13 @@ module adsr_generator (
     output reg  [7:0] amplitude  // Generated amplitude signal
 );
 
-    (* fsm_encoding = "binary" *) reg [3:0] state;
+    // Prevent FSM optimization
+    (* fsm_encoding = "one-hot" *) reg [3:0] state;
+    
+    // Ensure amplitude is not removed
+    (* keep *) reg [7:0] adsr_amplitude;
+    (* keep *) reg [7:0] adsr_debug;
+
     reg [7:0] counter;
 
     localparam STATE_IDLE    = 4'b0000;
@@ -546,8 +538,9 @@ module adsr_generator (
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             state     <= STATE_IDLE;
-            amplitude <= 8'd0;
+            adsr_amplitude <= 8'd0;
             counter   <= 8'd0;
+            adsr_debug <= 8'd0;
         end else if (ena) begin
             case (state)
                 STATE_IDLE: begin
@@ -559,23 +552,23 @@ module adsr_generator (
                     end
                 end
                 STATE_ATTACK: begin
-                    if (amplitude < 8'd255) begin
-                        amplitude <= amplitude + (attack >> 4); // Incremento proporcional al ataque
-                    end else begin
-                        amplitude <= 8'd255; // Límite superior
+                    if (adsr_amplitude < 8'd255)
+                        adsr_amplitude <= adsr_amplitude + (attack >> 4);
+                    else begin
+                        adsr_amplitude <= 8'd255;
                         state <= STATE_DECAY;
                     end
                 end
                 STATE_DECAY: begin
-                    if (amplitude > sustain) begin
-                        amplitude <= amplitude - ((amplitude - sustain) >> decay[3:0]); // Decremento suave hacia el nivel de sostenido
-                    end else begin
-                        amplitude <= sustain;
+                    if (adsr_amplitude > sustain)
+                        adsr_amplitude <= adsr_amplitude - ((adsr_amplitude - sustain) >> decay[3:0]);
+                    else begin
+                        adsr_amplitude <= sustain;
                         state <= STATE_SUSTAIN;
                     end
                 end
                 STATE_SUSTAIN: begin
-                    amplitude <= sustain; // Mantén el nivel de sostenido
+                    adsr_amplitude <= sustain;
                     if (counter == 8'd255) begin
                         state   <= STATE_RELEASE;
                         counter <= 8'd0;
@@ -584,11 +577,10 @@ module adsr_generator (
                     end
                 end
                 STATE_RELEASE: begin
-                    if (amplitude > 8'd0) begin
-                        // Decremento hacia 0
-                        amplitude <= amplitude - (amplitude >> rel[3:0]);
-                    end else begin
-                        amplitude <= 8'd0; // Asegurar que no sea negativo
+                    if (adsr_amplitude > 8'd0)
+                        adsr_amplitude <= adsr_amplitude - (adsr_amplitude >> rel[3:0]);
+                    else begin
+                        adsr_amplitude <= 8'd0;
                         state <= STATE_IDLE;
                     end
                 end
@@ -596,7 +588,18 @@ module adsr_generator (
             endcase
         end
     end
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            adsr_debug <= 8'd0;
+        else
+            adsr_debug <= adsr_amplitude;
+    end
+
+    assign amplitude = adsr_amplitude; // Ensure this reaches the output
 endmodule
+
+
 
 
 
@@ -612,7 +615,8 @@ module triangular_wave_generator (
         if (!rst_n)
             wave_out <= 8'd0;
         else if (ena)
-            wave_out <= phase[7] ? (8'd255 - phase[6:0] << 1) : (phase[6:0] << 1);
+           wave_out <= phase[7] ? (8'd255 - {1'b0, phase[6:0]} << 1) : ({1'b0, phase[6:0]} << 1);
+    
     end
 endmodule
 
