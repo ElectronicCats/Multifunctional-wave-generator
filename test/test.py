@@ -21,8 +21,8 @@ async def uart_send(dut, data):
     dut.ui_in.value = 1
     await ClockCycles(dut.clk, 217)
 
-    # Short delay before next command (~1ms delay)
-    await ClockCycles(dut.clk, 25000)
+    # Increased delay to allow UART processing (~2ms)
+    await ClockCycles(dut.clk, 50000)
 
 @cocotb.test()
 async def test_waveform_generation(dut):
@@ -33,10 +33,11 @@ async def test_waveform_generation(dut):
 
     # Reset DUT
     dut.rst_n.value = 0
-    await ClockCycles(dut.clk, 100)  
+    await ClockCycles(dut.clk, 500)  # Increased reset time
     dut.rst_n.value = 1
-    dut.ena.value = 1  # Enable module
+    await ClockCycles(dut.clk, 500)  # Allow system to stabilize
 
+    dut.ena.value = 1  # Enable module
     dut._log.info("Reset complete")
 
     # Test UART: Select different waveforms and verify I2S output changes
@@ -48,23 +49,36 @@ async def test_waveform_generation(dut):
     }
 
     for cmd, name in wave_commands.items():
+        before_wave_select = dut.adsr_debug.value  # Read adsr_debug before command
         await uart_send(dut, ord(cmd))
         await ClockCycles(dut.clk, 500)  # Allow processing time
+        after_wave_select = dut.adsr_debug.value  # Read adsr_debug after command
 
-        # Observe I2S serial data (uo_out[2]) change
-        i2s_sd_before = dut.uo_out.value[2]
-        await ClockCycles(dut.clk, 500)
-        i2s_sd_after = dut.uo_out.value[2]
+        dut._log.info(f"Checking adsr_debug after {name} command...")
+        dut._log.info(f"Before: {before_wave_select}, After: {after_wave_select}")
 
-        dut._log.info(f"Checking I2S SD after {name} command...")
-        dut._log.info(f"Before: {i2s_sd_before}, After: {i2s_sd_after}")
+        assert before_wave_select != after_wave_select, f"wave_select did not change after {name} command"
 
-        assert i2s_sd_before != i2s_sd_after, f"I2S SD signal did not change after {name} selection"
+        # Observe I2S serial data (uo_out[2]) change over multiple cycles
+        i2s_sd_changes = []
+        for _ in range(10):
+            await ClockCycles(dut.clk, 50)
+            i2s_sd_changes.append(dut.uo_out.value[2])
+
+        dut._log.info(f"I2S SD signal changes after {name}: {i2s_sd_changes}")
+        assert len(set(i2s_sd_changes)) > 1, f"I2S SD signal did not change after {name} selection"
 
     # Test UART: Set frequency (sending '0' - '9')
     for i in range(10):
+        before_freq_select = dut.adsr_debug.value  # Read adsr_debug before frequency command
         await uart_send(dut, ord(str(i)))
-        await ClockCycles(dut.clk, 1000)  
+        await ClockCycles(dut.clk, 1000)  # Allow processing time
+        after_freq_select = dut.adsr_debug.value  # Read adsr_debug after command
+
+        dut._log.info(f"Checking adsr_debug after setting frequency '{i}'...")
+        dut._log.info(f"Before: {before_freq_select}, After: {after_freq_select}")
+
+        assert before_freq_select != after_freq_select, f"freq_select did not change after setting frequency {i}"
 
         # Observe I2S clock (uo_out[0]) toggles
         prev_sck = dut.uo_out.value[0]
@@ -80,28 +94,28 @@ async def test_waveform_generation(dut):
     await uart_send(dut, ord('N'))
     await ClockCycles(dut.clk, 1000)
 
-    # Observe randomness in I2S serial data (uo_out[2])
-    i2s_noise_before = dut.uo_out.value[2]
-    await ClockCycles(dut.clk, 50)
-    i2s_noise_after = dut.uo_out.value[2]
+    i2s_noise_changes = []
+    for _ in range(10):
+        await ClockCycles(dut.clk, 50)
+        i2s_noise_changes.append(dut.uo_out.value[2])
 
     dut._log.info("Checking I2S SD signal after enabling white noise...")
-    dut._log.info(f"Before: {i2s_noise_before}, After: {i2s_noise_after}")
+    dut._log.info(f"Changes: {i2s_noise_changes}")
 
-    assert i2s_noise_before != i2s_noise_after, "White noise selection failed"
+    assert len(set(i2s_noise_changes)) > 1, "White noise selection failed"
 
     await uart_send(dut, ord('F'))
     await ClockCycles(dut.clk, 1000)
 
-    # Observe I2S serial data (uo_out[2]) again
-    i2s_noise_off_before = dut.uo_out.value[2]
-    await ClockCycles(dut.clk, 50)
-    i2s_noise_off_after = dut.uo_out.value[2]
+    i2s_noise_off_changes = []
+    for _ in range(10):
+        await ClockCycles(dut.clk, 50)
+        i2s_noise_off_changes.append(dut.uo_out.value[2])
 
     dut._log.info("Checking I2S SD signal after disabling white noise...")
-    dut._log.info(f"Before: {i2s_noise_off_before}, After: {i2s_noise_off_after}")
+    dut._log.info(f"Changes: {i2s_noise_off_changes}")
 
-    assert i2s_noise_off_before != i2s_noise_off_after, "White noise disable failed"
+    assert len(set(i2s_noise_off_changes)) == 1, "White noise disable failed"
 
     # Check I2S output correctness
     await ClockCycles(dut.clk, 1000)  
