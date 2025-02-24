@@ -47,7 +47,7 @@ module tb;
   initial begin
     #100;
     rst_n = 1;  // Release reset
-    #50;
+    #100;       // Allow stabilization
     ena = 1;    // Enable I2S transmitter and waveform generation
 
     #200;
@@ -61,15 +61,17 @@ module tb;
   task uart_send(input [7:0] data);
     reg [3:0] i;
     begin
-      ui_in[0] = 0;  // Start bit
+      ui_in[0] <= 0;  // Start bit
       #2604;
 
       for (i = 0; i < 8; i = i + 1) begin
-        ui_in[0] = (data >> i) & 1;
+        @(posedge clk);
+        ui_in[0] <= (data >> i) & 1;
         #2604;  // 9600 baud bit time
       end
 
-      ui_in[0] = 1;  // Stop bit
+      @(posedge clk);
+      ui_in[0] <= 1;  // Stop bit
       #2604;
 
       // Wait for processing before sending the next command
@@ -80,24 +82,24 @@ module tb;
   // Test sequence for UART commands & I2S validation
   reg [3:0] j;
   initial begin
-    #100;
+    #200;
     
     // Test wave selection
     uart_send(8'h54);  // 'T' for Triangle wave
     #2000;
-    assert (uo_out !== 8'b0) else $display("ERROR: Triangle wave not generated!");
+    assert (uo_out[2:0] !== 3'b000) else $display("ERROR: Triangle wave not generated!");
 
     uart_send(8'h53);  // 'S' for Sawtooth wave
     #2000;
-    assert (uo_out !== 8'b0) else $display("ERROR: Sawtooth wave not generated!");
+    assert (uo_out[2:0] !== 3'b000) else $display("ERROR: Sawtooth wave not generated!");
 
     uart_send(8'h51);  // 'Q' for Square wave
     #2000;
-    assert (uo_out !== 8'b0) else $display("ERROR: Square wave not generated!");
+    assert (uo_out[2:0] !== 3'b000) else $display("ERROR: Square wave not generated!");
 
-    uart_send(8'h57);  // 'W' for Sine wave (now using CORDIC)
+    uart_send(8'h57);  // 'W' for Sine wave (CORDIC)
     #2000;
-    assert (uo_out !== 8'b0) else $display("ERROR: Sine wave not generated!");
+    assert (uo_out[2:0] !== 3'b000) else $display("ERROR: Sine wave not generated!");
 
     // Test frequency selection
     for (j = 0; j < 10; j = j + 1) begin
@@ -109,7 +111,7 @@ module tb;
     // White Noise Test
     uart_send(8'h4E);  // Enable White Noise
     #2000;
-    assert (uo_out !== 8'b0) else $display("ERROR: White noise not generated!");
+    assert (uo_out[2:0] !== 3'b000) else $display("ERROR: White noise not generated!");
 
     uart_send(8'h46);  // Disable White Noise
     #2000;

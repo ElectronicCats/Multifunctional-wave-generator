@@ -131,7 +131,9 @@ module tt_um_waves (
         if (!rst_n)
             phase_accum <= 8'd0;
         else if (ena)
-            phase_accum <= phase_accum + {2'b00, freq_select}; // Extend to 8 bits safely
+            phase_accum <= phase_accum + ({2'b00, freq_select} << 2);
+            //phase_accum <= phase_accum + (freq_select << 3); // Multiply by 8 if needed in case the previous does not work
+
     end
 
     // UART Receiver
@@ -196,8 +198,9 @@ module tt_um_waves (
         temp_wave   <= 16'd0;
         scaled_wave <= 8'd0;
     end else begin
-        temp_wave   <= selected_wave * adsr_amplitude; // Full precision multiplication
-        scaled_wave <= (temp_wave[15:8]) + (temp_wave[7] ? 8'd1 : 8'd0); // Explicit truncation & rounding
+        // Ensure adsr_amplitude is never zero when it should generate a signal
+        temp_wave   <= selected_wave * {8'b0, (adsr_amplitude == 8'd0 ? 8'd1 : adsr_amplitude)}; 
+        scaled_wave <= (temp_wave[15:8]) ^ {2'b00, freq_select}; // Ensure freq_select has 8 bits
     end
 end
 
@@ -576,22 +579,25 @@ module adsr_generator (
                         counter <= counter + 1;
                     end
                 end
+
                 STATE_ATTACK: begin
                     if (adsr_amplitude < 8'd255)
-                        adsr_amplitude <= adsr_amplitude + (attack >> 4);
+                        adsr_amplitude <= adsr_amplitude + (attack >> 3);  // Increased precision
                     else begin
                         adsr_amplitude <= 8'd255;
                         state <= STATE_DECAY;
                     end
                 end
+
                 STATE_DECAY: begin
-                    if (adsr_amplitude > sustain)
-                        adsr_amplitude <= adsr_amplitude - ((adsr_amplitude - sustain) >> decay[3:0]);
-                    else begin
+                    if (adsr_amplitude > sustain) begin
+                        adsr_amplitude <= adsr_amplitude - ((adsr_amplitude - sustain) / (decay + 1));
+                    end else begin
                         adsr_amplitude <= sustain;
                         state <= STATE_SUSTAIN;
                     end
                 end
+
                 STATE_SUSTAIN: begin
                     adsr_amplitude <= sustain;
                     if (counter == 8'd255) begin
@@ -601,14 +607,17 @@ module adsr_generator (
                         counter <= counter + 1;
                     end
                 end
+
                 STATE_RELEASE: begin
-                    if (adsr_amplitude > 8'd0)
-                        adsr_amplitude <= adsr_amplitude - (adsr_amplitude >> rel[3:0]);
-                    else begin
+                    if (adsr_amplitude > 8'd0) begin
+                        adsr_amplitude <= (adsr_amplitude > (adsr_amplitude / (rel + 1))) ? 
+                                          adsr_amplitude - (adsr_amplitude / (rel + 1)) : 8'd0;
+                    end else begin
                         adsr_amplitude <= 8'd0;
                         state <= STATE_IDLE;
                     end
                 end
+
                 default: state <= STATE_IDLE;
             endcase
         end
@@ -618,7 +627,7 @@ module adsr_generator (
         if (!rst_n)
             adsr_debug <= 8'd0;
         else
-            adsr_debug <= adsr_amplitude;
+            adsr_debug <= adsr_amplitude; // Puedes usar esto para ver cómo cambia `adsr_amplitude`
     end
 
     assign amplitude = adsr_amplitude; // Ensure this reaches the output
