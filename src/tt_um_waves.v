@@ -554,7 +554,7 @@ module adsr_generator (
     
     // Ensure amplitude is not removed
     (* keep *) reg [7:0] adsr_amplitude;
-    (* keep *) reg [7:0] adsr_debug;
+    //(* keep *) reg [7:0] adsr_debug;
 
     reg [7:0] counter;
 
@@ -569,7 +569,7 @@ module adsr_generator (
             state     <= STATE_IDLE;
             adsr_amplitude <= 8'd0;
             counter   <= 8'd0;
-            adsr_debug <= 8'd0;
+            //adsr_debug <= 8'd0;
         end else if (ena) begin
             case (state)
                 STATE_IDLE: begin
@@ -618,14 +618,14 @@ module adsr_generator (
         end
     end
 
-    always @(posedge clk or negedge rst_n) begin
+    /*always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
             adsr_debug <= 8'd0;
         else
             adsr_debug <= adsr_amplitude;
     end
 
-    assign amplitude = adsr_amplitude; // Ensure this reaches the output
+    assign amplitude = adsr_amplitude; // Ensure this reaches the output*/
 endmodule
 
 
