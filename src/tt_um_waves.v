@@ -16,7 +16,8 @@ module tt_um_waves (
     wire [2:0] wave_select;
     wire       white_noise_en;
     (* keep *) reg [15:0] temp_wave; 
-    wire [6:0] unused_temp_wave = temp_wave[6:0];
+    wire [6:0] unused_temp_wave_low = temp_wave[6:0];  
+    wire unused_temp_wave_high = temp_wave[7];       
 
   
     wire unused_ui_in;
@@ -28,86 +29,86 @@ module tt_um_waves (
     wire [7:0] adsr_amplitude;
 
     // Frequency Divider
-    reg [31:0] freq_divider;
-    reg [31:0] clk_div;//////////
+    reg [20:0] freq_divider;
+    reg [20:0] clk_div;//////////
     reg wave_clk;
   
 
     // Frequency selection logic
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            freq_divider <= 32'd284091;  // Default to A4 frequency
+            freq_divider <= 21'd284091;  // Default to A4 frequency
         end else begin
             case (freq_select)  
-        6'b000000: freq_divider <= 32'd1915712;  // C2 (65.41 Hz)
-       	6'b000001: freq_divider <= 32'd1803586;  // C#2/Db2 (69.30 Hz)
-        6'b000010: freq_divider <= 32'd1702624;  // D2 (73.42 Hz)
-        6'b000011: freq_divider <= 32'd1607142;  // D#2/Eb2 (77.78 Hz)
-        6'b000100: freq_divider <= 32'd1515152;  // E2 (82.41 Hz)
-        6'b000101: freq_divider <= 32'd1431731;  // F2 (87.31 Hz)
-        6'b000110: freq_divider <= 32'd1351351;  // F#2/Gb2 (92.50 Hz)
-        6'b000111: freq_divider <= 32'd1275510;  // G2 (98.00 Hz)
-        6'b001000: freq_divider <= 32'd1204819;  // G#2/Ab2 (103.83 Hz)
-        6'b001001: freq_divider <= 32'd1136364;  // A2 (110.00 Hz)
-        6'b001010: freq_divider <= 32'd1075268;  // A#2/Bb2 (116.54 Hz)
-        6'b001011: freq_divider <= 32'd1017340;  // B2 (123.47 Hz)
+            6'b000000: freq_divider <= 21'd1915712;  // C2 (65.41 Hz)
+       	    6'b000001: freq_divider <= 21'd1803586;  // C#2/Db2 (69.30 Hz)
+            6'b000010: freq_divider <= 21'd1702624;  // D2 (73.42 Hz)
+            6'b000011: freq_divider <= 21'd1607142;  // D#2/Eb2 (77.78 Hz)
+            6'b000100: freq_divider <= 21'd1515152;  // E2 (82.41 Hz)
+            6'b000101: freq_divider <= 21'd1431731;  // F2 (87.31 Hz)
+            6'b000110: freq_divider <= 21'd1351351;  // F#2/Gb2 (92.50 Hz)
+            6'b000111: freq_divider <= 21'd1275510;  // G2 (98.00 Hz)
+            6'b001000: freq_divider <= 21'd1204819;  // G#2/Ab2 (103.83 Hz)
+            6'b001001: freq_divider <= 21'd1136364;  // A2 (110.00 Hz)
+            6'b001010: freq_divider <= 21'd1075268;  // A#2/Bb2 (116.54 Hz)
+            6'b001011: freq_divider <= 21'd1017340;  // B2 (123.47 Hz)
 
-        // Octave 3
-        6'b001100: freq_divider <= 32'd95786;    // C3 (130.81 Hz)
-        6'b001101: freq_divider <= 32'd90180;    // C#3/Db3 (138.59 Hz)
-        6'b001110: freq_divider <= 32'd85131;    // D3 (146.83 Hz)
-        6'b001111: freq_divider <= 32'd80357;    // D#3/Eb3 (155.56 Hz)
-        6'b010000: freq_divider <= 32'd75758;    // E3 (164.81 Hz)
-        6'b010001: freq_divider <= 32'd71586;    // F3 (174.61 Hz)
-        6'b010010: freq_divider <= 32'd67567;    // F#3/Gb3 (185.00 Hz)
-        6'b010011: freq_divider <= 32'd63775;    // G3 (196.00 Hz)
-        6'b010100: freq_divider <= 32'd60241;    // G#3/Ab3 (207.65 Hz)
-        6'b010101: freq_divider <= 32'd56818;    // A3 (220.00 Hz)
-        6'b010110: freq_divider <= 32'd53763;    // A#3/Bb3 (233.08 Hz)
-        6'b010111: freq_divider <= 32'd50867;    // B3 (246.94 Hz)
+            // Octave 3
+            6'b001100: freq_divider <= 21'd95786;    // C3 (130.81 Hz)
+            6'b001101: freq_divider <= 21'd90180;    // C#3/Db3 (138.59 Hz)
+            6'b001110: freq_divider <= 21'd85131;    // D3 (146.83 Hz)
+            6'b001111: freq_divider <= 21'd80357;    // D#3/Eb3 (155.56 Hz)
+            6'b010000: freq_divider <= 21'd75758;    // E3 (164.81 Hz)
+            6'b010001: freq_divider <= 21'd71586;    // F3 (174.61 Hz)
+            6'b010010: freq_divider <= 21'd67567;    // F#3/Gb3 (185.00 Hz)
+            6'b010011: freq_divider <= 21'd63775;    // G3 (196.00 Hz)
+            6'b010100: freq_divider <= 21'd60241;    // G#3/Ab3 (207.65 Hz)
+            6'b010101: freq_divider <= 21'd56818;    // A3 (220.00 Hz)
+            6'b010110: freq_divider <= 21'd53763;    // A#3/Bb3 (233.08 Hz)
+            6'b010111: freq_divider <= 21'd50867;    // B3 (246.94 Hz)
 
-        // Octave 4
-        6'b011000: freq_divider <= 32'd47878;    // C4 (261.63 Hz)
-        6'b011001: freq_divider <= 32'd45090;    // C#4/Db4 (277.18 Hz)
-        6'b011010: freq_divider <= 32'd42566;    // D4 (293.66 Hz)
-        6'b011011: freq_divider <= 32'd40178;    // D#4/Eb4 (311.13 Hz)
-        6'b011100: freq_divider <= 32'd37878;    // E4 (329.63 Hz)
-        6'b011101: freq_divider <= 32'd35793;    // F4 (349.23 Hz)
-        6'b011110: freq_divider <= 32'd33783;    // F#4/Gb4 (369.99 Hz)
-        6'b011111: freq_divider <= 32'd31888;    // G4 (392.00 Hz)
-        6'b100000: freq_divider <= 32'd30120;    // G#4/Ab4 (415.30 Hz)
-        6'b100001: freq_divider <= 32'd28409;    // A4 (440.00 Hz)
-        6'b100010: freq_divider <= 32'd26881;    // A#4/Bb4 (466.16 Hz)
-        6'b100011: freq_divider <= 32'd25434;    // B4 (493.88 Hz)
+            // Octave 4
+            6'b011000: freq_divider <= 21'd47878;    // C4 (261.63 Hz)
+            6'b011001: freq_divider <= 21'd45090;    // C#4/Db4 (277.18 Hz)
+            6'b011010: freq_divider <= 21'd42566;    // D4 (293.66 Hz)
+            6'b011011: freq_divider <= 21'd40178;    // D#4/Eb4 (311.13 Hz)
+            6'b011100: freq_divider <= 21'd37878;    // E4 (329.63 Hz)
+            6'b011101: freq_divider <= 21'd35793;    // F4 (349.23 Hz)
+            6'b011110: freq_divider <= 21'd33783;    // F#4/Gb4 (369.99 Hz)
+            6'b011111: freq_divider <= 21'd31888;    // G4 (392.00 Hz)
+            6'b100000: freq_divider <= 21'd30120;    // G#4/Ab4 (415.30 Hz)
+            6'b100001: freq_divider <= 21'd28409;    // A4 (440.00 Hz)
+            6'b100010: freq_divider <= 21'd26881;    // A#4/Bb4 (466.16 Hz)
+            6'b100011: freq_divider <= 21'd25434;    // B4 (493.88 Hz)
 
-        // Octave 5
-        6'b100100: freq_divider <= 32'd23939;    // C5 (523.25 Hz)
-        6'b100101: freq_divider <= 32'd22545;    // C#5/Db5 (554.37 Hz)
-        6'b100110: freq_divider <= 32'd21283;    // D5 (587.33 Hz)
-        6'b100111: freq_divider <= 32'd20089;    // D#5/Eb5 (622.25 Hz)
-        6'b101000: freq_divider <= 32'd18938;    // E5 (659.25 Hz)
-        6'b101001: freq_divider <= 32'd17896;    // F5 (698.46 Hz)
-        6'b101010: freq_divider <= 32'd16891;    // F#5/Gb5 (739.99 Hz)
-        6'b101011: freq_divider <= 32'd15944;    // G5 (783.99 Hz)
-        6'b101100: freq_divider <= 32'd15060;    // G#5/Ab5 (830.61 Hz)
-        6'b101101: freq_divider <= 32'd14204;    // A5 (880.00 Hz)
-        6'b101110: freq_divider <= 32'd13441;    // A#5/Bb5 (932.33 Hz)
-        6'b101111: freq_divider <= 32'd12717;    // B5 (987.77 Hz)
+            // Octave 5
+            6'b100100: freq_divider <= 21'd23939;    // C5 (523.25 Hz)
+            6'b100101: freq_divider <= 21'd22545;    // C#5/Db5 (554.37 Hz)
+            6'b100110: freq_divider <= 21'd21283;    // D5 (587.33 Hz)
+            6'b100111: freq_divider <= 21'd20089;    // D#5/Eb5 (622.25 Hz)
+            6'b101000: freq_divider <= 21'd18938;    // E5 (659.25 Hz)
+            6'b101001: freq_divider <= 21'd17896;    // F5 (698.46 Hz)
+            6'b101010: freq_divider <= 21'd16891;    // F#5/Gb5 (739.99 Hz)
+            6'b101011: freq_divider <= 21'd15944;    // G5 (783.99 Hz)
+            6'b101100: freq_divider <= 21'd15060;    // G#5/Ab5 (830.61 Hz)
+            6'b101101: freq_divider <= 21'd14204;    // A5 (880.00 Hz)
+            6'b101110: freq_divider <= 21'd13441;    // A#5/Bb5 (932.33 Hz)
+            6'b101111: freq_divider <= 21'd12717;    // B5 (987.77 Hz)
 
-        // Octave 6
-        6'b110000: freq_divider <= 32'd11969;    // C6 (1046.50 Hz)
-        6'b110001: freq_divider <= 32'd11272;    // C#6/Db6 (1108.73 Hz)
-        6'b110010: freq_divider <= 32'd10642;    // D6 (1174.66 Hz)
-        6'b110011: freq_divider <= 32'd10044;    // D#6/Eb6 (1244.51 Hz)
-        6'b110100: freq_divider <= 32'd9470;     // E6 (1318.51 Hz)
-        6'b110101: freq_divider <= 32'd8948;     // F6 (1396.91 Hz)
-        6'b110110: freq_divider <= 32'd8445;     // F#6/Gb6 (1479.98 Hz)
-        6'b110111: freq_divider <= 32'd7972;     // G6 (1567.98 Hz)
-        6'b111000: freq_divider <= 32'd7518;     // G#6/Ab6 (1661.22 Hz)
-        6'b111001: freq_divider <= 32'd7090;     // A6 (1760.00 Hz)
-        6'b111010: freq_divider <= 32'd6719;     // A#6/Bb6 (1864.66 Hz)
-        6'b111011: freq_divider <= 32'd6358;     // B6 (1975.53 Hz)
-                default:   freq_divider <= 32'd284091;   // Default frequency
+            // Octave 6
+            6'b110000: freq_divider <= 21'd11969;    // C6 (1046.50 Hz)
+            6'b110001: freq_divider <= 21'd11272;    // C#6/Db6 (1108.73 Hz)
+            6'b110010: freq_divider <= 21'd10642;    // D6 (1174.66 Hz)
+            6'b110011: freq_divider <= 21'd10044;    // D#6/Eb6 (1244.51 Hz)
+            6'b110100: freq_divider <= 21'd9470;     // E6 (1318.51 Hz)
+            6'b110101: freq_divider <= 21'd8948;     // F6 (1396.91 Hz)
+            6'b110110: freq_divider <= 21'd8445;     // F#6/Gb6 (1479.98 Hz)
+            6'b110111: freq_divider <= 21'd7972;     // G6 (1567.98 Hz)
+            6'b111000: freq_divider <= 21'd7518;     // G#6/Ab6 (1661.22 Hz)
+            6'b111001: freq_divider <= 21'd7090;     // A6 (1760.00 Hz)
+            6'b111010: freq_divider <= 21'd6719;     // A#6/Bb6 (1864.66 Hz)
+            6'b111011: freq_divider <= 21'd6358;     // B6 (1975.53 Hz)
+            default:   freq_divider <= 21'd284091;   // Default frequency
             endcase
         end
     end
@@ -182,30 +183,32 @@ module tt_um_waves (
         end
     end
 
-    // ADSR Generator
+    // Instantiate ADSR generator
     adsr_generator adsr_gen (
-        .clk(clk), .rst_n(rst_n),
-        .attack(attack), .decay(decay),
-        .sustain(sustain), .rel(rel),
-        .amplitude(adsr_amplitude), .ena(ena)
+        .clk(clk), 
+        .rst_n(rst_n),
+        .attack(attack), 
+        .decay(decay),
+        .sustain(sustain), 
+        .rel(rel),
+        .amplitude(adsr_amplitude), 
+        .ena(ena)
     );
 
-    // Apply ADSR Envelope
+    // Apply ADSR Envelope to waveform
     (* keep *) reg [7:0] scaled_wave;
 
     always @(posedge clk or negedge rst_n) begin
-    if (!rst_n) begin
-        temp_wave   <= 16'd0;
-        scaled_wave <= 8'd0;
-    end else begin
-        // Ensure adsr_amplitude is never zero when it should generate a signal
-        temp_wave   <= selected_wave * {8'b0, (adsr_amplitude == 8'd0 ? 8'd1 : adsr_amplitude)}; 
-        scaled_wave <= (temp_wave[15:8]) ^ {2'b00, freq_select}; // Ensure freq_select has 8 bits
+        if (!rst_n) begin
+            // Reset wave values
+            temp_wave   <= 16'd0;
+            scaled_wave <= 8'd0;
+        end else begin
+            // Ensure adsr_amplitude is never zero when it should generate a signal
+            temp_wave   <= (selected_wave * adsr_amplitude) >> 8; // Normalize scaling 
+            scaled_wave <= (temp_wave[15:8]) ^ {2'b00, freq_select[5:0]}; // Ensure freq_select uses 8 bits
+        end
     end
-end
-
-
-
 
 
     // I2S Output
@@ -497,16 +500,14 @@ endmodule
 
 
 
-
-
-
 module square_wave_generator (
     input  wire       ena,        
     input  wire       clk,        
     input  wire       rst_n,      
     input  wire [7:0] phase,  // Use phase_accum instead of wave_clk
     output reg  [7:0] wave_out    
-);
+);  
+  wire unused_phase = |phase[6:0]; // OR-reduction para evitar la advertencia
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
@@ -579,25 +580,22 @@ module adsr_generator (
                         counter <= counter + 1;
                     end
                 end
-
                 STATE_ATTACK: begin
                     if (adsr_amplitude < 8'd255)
-                        adsr_amplitude <= adsr_amplitude + (attack >> 3);  // Increased precision
+                        adsr_amplitude <= adsr_amplitude + (attack >> 4);
                     else begin
                         adsr_amplitude <= 8'd255;
                         state <= STATE_DECAY;
                     end
                 end
-
                 STATE_DECAY: begin
-                    if (adsr_amplitude > sustain) begin
-                        adsr_amplitude <= adsr_amplitude - ((adsr_amplitude - sustain) / (decay + 1));
-                    end else begin
+                    if (adsr_amplitude > sustain)
+                        adsr_amplitude <= adsr_amplitude - ((adsr_amplitude - sustain) >> decay[3:0]);
+                    else begin
                         adsr_amplitude <= sustain;
                         state <= STATE_SUSTAIN;
                     end
                 end
-
                 STATE_SUSTAIN: begin
                     adsr_amplitude <= sustain;
                     if (counter == 8'd255) begin
@@ -607,17 +605,14 @@ module adsr_generator (
                         counter <= counter + 1;
                     end
                 end
-
                 STATE_RELEASE: begin
-                    if (adsr_amplitude > 8'd0) begin
-                        adsr_amplitude <= (adsr_amplitude > (adsr_amplitude / (rel + 1))) ? 
-                                          adsr_amplitude - (adsr_amplitude / (rel + 1)) : 8'd0;
-                    end else begin
+                    if (adsr_amplitude > 8'd0)
+                        adsr_amplitude <= adsr_amplitude - (adsr_amplitude >> rel[3:0]);
+                    else begin
                         adsr_amplitude <= 8'd0;
                         state <= STATE_IDLE;
                     end
                 end
-
                 default: state <= STATE_IDLE;
             endcase
         end
@@ -627,7 +622,7 @@ module adsr_generator (
         if (!rst_n)
             adsr_debug <= 8'd0;
         else
-            adsr_debug <= adsr_amplitude; // Puedes usar esto para ver cómo cambia `adsr_amplitude`
+            adsr_debug <= adsr_amplitude;
     end
 
     assign amplitude = adsr_amplitude; // Ensure this reaches the output
