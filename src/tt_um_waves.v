@@ -15,7 +15,12 @@ module tt_um_waves (
     wire [5:0] freq_select;
     wire [2:0] wave_select;
     wire       white_noise_en;
+    
+    // ADSR Control
+    wire [7:0] adsr_amplitude;
     (* keep *) reg [15:0] temp_wave; 
+    (* keep *) reg [7:0] attack, decay, sustain, rel; 
+  
     wire [6:0] unused_temp_wave_low = temp_wave[6:0];  
     wire unused_temp_wave_high = temp_wave[7];       
 
@@ -23,16 +28,13 @@ module tt_um_waves (
     wire unused_ui_in;
     assign unused_ui_in = |ui_in[7:1];  // OR-reduction of unused bits
 
-
-    // ADSR Control
-    wire [7:0] attack, decay, sustain, rel;
-    wire [7:0] adsr_amplitude;
-
     // Frequency Divider
     reg [20:0] freq_divider;
     reg [20:0] clk_div;//////////
     reg wave_clk;
   
+    // Phase accumulator for all waveforms
+    reg [7:0] phase_accum;
 
     // Frequency selection logic
     always @(posedge clk or negedge rst_n) begin
@@ -126,16 +128,24 @@ module tt_um_waves (
     end
 
 
-        // Phase accumulator for all waveforms
-    reg [7:0] phase_accum;
+    // Phase accumulator for all waveforms
     always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+           phase_accum <= 8'd0;
+        else if (ena) begin
+          phase_accum <= phase_accum + ({2'b00, freq_select} << 2); 
+        end
+    end
+
+  
+    /*always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
             phase_accum <= 8'd0;
         else if (ena)
-            phase_accum <= phase_accum + ({2'b00, freq_select} << 2);
+          phase_accum <= phase_accum + ({2'b00, freq_select} << 3);
             //phase_accum <= phase_accum + (freq_select << 3); // Multiply by 8 if needed in case the previous does not work
 
-    end
+    end*/
 
     // UART Receiver
     uart_receiver uart_rx_inst (
@@ -146,13 +156,33 @@ module tt_um_waves (
         .wave_select(wave_select),
         .white_noise_en(white_noise_en)
     );
+  
+  // Encoders for ADSR, now with explicit output registers
+    (* keep *) wire [7:0] attack_value, decay_value, sustain_value, rel_value;
 
     // Encoders for ADSR
-    encoder #(.WIDTH(8), .INCREMENT(1), .MAX_VALUE(255), .MIN_VALUE(0)) attack_encoder (.clk(clk), .rst_n(rst_n), .a(uio_in[0]), .b(uio_in[1]), .value(attack), .ena(ena));
-    encoder #(.WIDTH(8), .INCREMENT(1), .MAX_VALUE(255), .MIN_VALUE(0)) decay_encoder (.clk(clk), .rst_n(rst_n), .a(uio_in[2]), .b(uio_in[3]), .value(decay), .ena(ena));
-    encoder #(.WIDTH(8), .INCREMENT(1), .MAX_VALUE(255), .MIN_VALUE(0)) sustain_encoder (.clk(clk), .rst_n(rst_n), .a(uio_in[4]), .b(uio_in[5]), .value(sustain), .ena(ena));
-    encoder #(.WIDTH(8), .INCREMENT(1), .MAX_VALUE(255), .MIN_VALUE(0)) release_encoder (.clk(clk), .rst_n(rst_n), .a(uio_in[6]), .b(uio_in[7]), .value(rel), .ena(ena));
+    encoder #(.WIDTH(8), .INCREMENT(1), .MAX_VALUE(255), .MIN_VALUE(0)) attack_encoder (.clk(clk), .rst_n(rst_n), .a(uio_in[0]), .b(uio_in[1]), .value(attack_value), .ena(ena));
+    encoder #(.WIDTH(8), .INCREMENT(1), .MAX_VALUE(255), .MIN_VALUE(0)) decay_encoder (.clk(clk), .rst_n(rst_n), .a(uio_in[2]), .b(uio_in[3]), .value(decay_value), .ena(ena));
+    encoder #(.WIDTH(8), .INCREMENT(1), .MAX_VALUE(255), .MIN_VALUE(0)) sustain_encoder (.clk(clk), .rst_n(rst_n), .a(uio_in[4]), .b(uio_in[5]), .value(sustain_value), .ena(ena));
+    encoder #(.WIDTH(8), .INCREMENT(1), .MAX_VALUE(255), .MIN_VALUE(0)) release_encoder (.clk(clk), .rst_n(rst_n), .a(uio_in[6]), .b(uio_in[7]), .value(rel_value), .ena(ena));
 
+  
+      // Register the encoder outputs to prevent optimization
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            attack  <= 8'd0;
+            decay   <= 8'd0;
+            sustain <= 8'd0;
+            rel     <= 8'd0;
+        end else begin
+            attack  <= attack_value;
+            decay   <= decay_value;
+            sustain <= sustain_value;
+            rel     <= rel_value;
+        end
+    end
+
+  
 
         // Wave generators 
     wire [7:0] tri_wave_out, saw_wave_out, sqr_wave_out, sine_wave_out;
@@ -167,21 +197,22 @@ module tt_um_waves (
 
 
     // Select waveform output
-        reg [7:0] selected_wave;
+    reg [7:0] selected_wave;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
             selected_wave <= 8'd0;
         else begin
             case (wave_select)
-                3'b000: selected_wave <= tri_wave_out;
-                3'b001: selected_wave <= saw_wave_out;
-                3'b010: selected_wave <= sqr_wave_out;
-                3'b011: selected_wave <= sine_wave_out;
-                3'b100: selected_wave <= noise_out;
-                default: selected_wave <= 8'd0;
+                 3'b000: selected_wave <= tri_wave_out;
+                 3'b001: selected_wave <= saw_wave_out;
+                 3'b010: selected_wave <= sqr_wave_out;
+                 3'b011: selected_wave <= sine_wave_out;
+                 3'b100: selected_wave <= noise_out;
+                 default: selected_wave <= selected_wave; 
             endcase
         end
     end
+
 
     // Instantiate ADSR generator
     adsr_generator adsr_gen (
@@ -200,19 +231,26 @@ module tt_um_waves (
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            // Reset wave values
             temp_wave   <= 16'd0;
             scaled_wave <= 8'd0;
         end else begin
-            // Ensure adsr_amplitude is never zero when it should generate a signal
-            temp_wave   <= (selected_wave * adsr_amplitude) >> 8; // Normalize scaling 
-            scaled_wave <= (temp_wave[15:8]) ^ {2'b00, freq_select[5:0]}; // Ensure freq_select uses 8 bits
-        end
+            temp_wave <= (selected_wave * adsr_amplitude) >> 8; // Normalización
+
+            // Validar `freq_select` para evitar valores fuera de rango
+            if (freq_select < 6'b111100) // Evitar valores > 60
+                scaled_wave <= temp_wave[15:8] ^ {2'b00, freq_select};
+            else
+                scaled_wave <= temp_wave[15:8]; // Si `freq_select` es inválido, lo ignora
+         end
     end
+
 
 
     // I2S Output
     wire i2s_sck, i2s_ws, i2s_sd;
+  //wire [15:0] i2s_data = {scaled_wave, 8'b0}; // Extends to 16 bits
+
+  
     i2s_transmitter i2s_out (
         .clk(clk),
         .rst_n(rst_n),
@@ -407,7 +445,7 @@ module i2s_transmitter (
             bit_counter <= 0;
             shift_reg  <= 16'd0;
         end else if (ena) begin
-            // Generate I2S Serial Clock (sck) at the correct frequency
+            // Generación del clock I2S (sck)
             if (clk_div == (SCK_DIV - 1)) begin
                 clk_div <= 0;
                 sck <= ~sck;  // Toggle sck
@@ -415,21 +453,28 @@ module i2s_transmitter (
                 clk_div <= clk_div + 1;
             end
 
-            // Data Transmission Logic (Shift Register)
-            if (sck == 0) begin  // Shift data on the falling edge of sck
+            // Lógica de transmisión de datos
+            if (sck == 0) begin  // Se hace el shift en el flanco de bajada de `sck`
                 if (bit_counter == 0) begin
-                    ws <= ~ws;  // Toggle word select every 16 bits
-                    shift_reg <= {data, data};  // Duplicate 8-bit data for 16-bit format
+                    ws <= ~ws;  // Cambia `ws` solo al inicio de un nuevo frame de 16 bits
+                    shift_reg <= ws ? {data, 8'd0} : {8'd0, data}; // L/R separados
                 end else begin
-                    shift_reg <= shift_reg << 1;  // Shift left to send MSB first
+                    shift_reg <= shift_reg << 1;  // Shift left para enviar MSB primero
                 end
-
-                sd <= shift_reg[15];  // Output MSB first
+                sd <= shift_reg[15];  // Se envía el MSB en `sd`
                 bit_counter <= (bit_counter == 15) ? 0 : bit_counter + 1;
             end
+        end else begin
+            // Si `ena` es bajo, los valores se mantienen en 0
+            sck <= 0;
+            ws <= 0;
+            sd <= 0;
+            bit_counter <= 0;
         end
     end
 endmodule
+
+
 
 
 
@@ -474,28 +519,31 @@ module cordic_sine_generator (
     end
 
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            x <= SCALE_FACTOR;
-            y <= 16'd0;
-            z <= {phase, 8'b0};
-            i <= 4'b0000;
-        end else if (ena) begin
-            if (i < 4'b1000) begin // Limit iterations to 8
-                if (z[15]) begin
-                    x <= x + (y >>> i);
-                    y <= y - (x >>> i);
-                    z <= z - atan_value;
-                end else begin
-                    x <= x - (y >>> i);
-                    y <= y + (x >>> i);
-                    z <= z + atan_value;
-                end
-                i <= i + 1;
+    if (!rst_n) begin
+        x <= SCALE_FACTOR; // Factor de escala predefinido
+        y <= 16'd0;        // Comienza en 0
+        z <= 16'd0;        // Valor neutro en el reset
+        i <= 4'b0000;      // Iteración en 0
+    end else if (ena) begin
+        if (i == 4'b0000)  // Solo al inicio de una nueva conversión
+            z <= {phase, 8'b0};  // Carga el ángulo de entrada
+        if (i < 4'b1000) begin // Iteraciones del algoritmo
+            if (z[15]) begin
+                x <= x + (y >>> i);
+                y <= y - (x >>> i);
+                z <= z - atan_value;
             end else begin
-                sine_out <= y[15:8]; // Output the final sine value after 8 iterations
+                x <= x - (y >>> i);
+                y <= y + (x >>> i);
+                z <= z + atan_value;
             end
+            i <= i + 1;
+        end else begin
+            sine_out <= y[15:8]; // Resultado final de la onda seno
         end
     end
+end
+
 endmodule
 
 
@@ -546,7 +594,7 @@ module adsr_generator (
     input  wire [7:0] decay,     // Decay value
     input  wire [7:0] sustain,   // Sustain value
     input  wire [7:0] rel,       // Release value
-    output reg  [7:0] amplitude  // Generated amplitude signal
+    output reg  [7:0] amplitude  // Output amplitude
 );
 
     // Prevent FSM optimization
@@ -554,7 +602,6 @@ module adsr_generator (
     
     // Ensure amplitude is not removed
     (* keep *) reg [7:0] adsr_amplitude;
-    //(* keep *) reg [7:0] adsr_debug;
 
     reg [7:0] counter;
 
@@ -566,10 +613,9 @@ module adsr_generator (
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            state     <= STATE_IDLE;
+            state          <= STATE_IDLE;
             adsr_amplitude <= 8'd0;
-            counter   <= 8'd0;
-            //adsr_debug <= 8'd0;
+            counter        <= 8'd0;
         end else if (ena) begin
             case (state)
                 STATE_IDLE: begin
@@ -582,7 +628,7 @@ module adsr_generator (
                 end
                 STATE_ATTACK: begin
                     if (adsr_amplitude < 8'd255)
-                        adsr_amplitude <= adsr_amplitude + (attack >> 4);
+                        adsr_amplitude <= adsr_amplitude + (attack >> 4); // Usa los 8 bits de attack
                     else begin
                         adsr_amplitude <= 8'd255;
                         state <= STATE_DECAY;
@@ -590,7 +636,7 @@ module adsr_generator (
                 end
                 STATE_DECAY: begin
                     if (adsr_amplitude > sustain)
-                        adsr_amplitude <= adsr_amplitude - ((adsr_amplitude - sustain) >> decay[3:0]);
+                        adsr_amplitude <= adsr_amplitude - ((adsr_amplitude - sustain) >> (decay[7:4] + 1)); // Usa todos los bits de decay
                     else begin
                         adsr_amplitude <= sustain;
                         state <= STATE_SUSTAIN;
@@ -607,7 +653,7 @@ module adsr_generator (
                 end
                 STATE_RELEASE: begin
                     if (adsr_amplitude > 8'd0)
-                        adsr_amplitude <= adsr_amplitude - (adsr_amplitude >> rel[3:0]);
+                        adsr_amplitude <= adsr_amplitude - (adsr_amplitude >> (rel[7:4] + 1)); // Usa todos los bits de release
                     else begin
                         adsr_amplitude <= 8'd0;
                         state <= STATE_IDLE;
@@ -618,14 +664,11 @@ module adsr_generator (
         end
     end
 
-    /*always @(posedge clk or negedge rst_n) begin
-        if (!rst_n)
-            adsr_debug <= 8'd0;
-        else
-            adsr_debug <= adsr_amplitude;
+    // Asignación correcta de la salida de amplitud
+    always @(posedge clk) begin
+        amplitude <= adsr_amplitude;
     end
 
-    assign amplitude = adsr_amplitude; // Ensure this reaches the output*/
 endmodule
 
 
