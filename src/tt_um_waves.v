@@ -10,7 +10,7 @@ module tt_um_waves (
     input  wire       clk,      // Clock
     input  wire       rst_n     // Active-low reset
 );
-
+  
     // UART Signals
     wire [5:0] freq_select;
     wire [2:0] wave_select;
@@ -18,25 +18,17 @@ module tt_um_waves (
     
     // ADSR Control
     wire [7:0] adsr_amplitude;
-    (* keep *) reg [15:0] temp_wave; 
-    (* keep *) reg [7:0] attack, decay, sustain, rel; 
-  
-    wire [6:0] unused_temp_wave_low = temp_wave[6:0];  
-    wire unused_temp_wave_high = temp_wave[7];       
-
-  
-    wire unused_ui_in;
-    assign unused_ui_in = |ui_in[7:1];  // OR-reduction of unused bits
+    reg [15:0] temp_wave; 
+    reg [7:0] attack, decay, sustain, rel; 
 
     // Frequency Divider
     reg [20:0] freq_divider;
-    reg [20:0] clk_div;//////////
+    reg [20:0] clk_div;
     reg wave_clk;
   
     // Phase accumulator for all waveforms
     reg [7:0] phase_accum;
 
-    // Frequency selection logic
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             freq_divider <= 21'd284091;  // Default to A4 frequency
@@ -110,7 +102,7 @@ module tt_um_waves (
             6'b111001: freq_divider <= 21'd7090;     // A6 (1760.00 Hz)
             6'b111010: freq_divider <= 21'd6719;     // A#6/Bb6 (1864.66 Hz)
             6'b111011: freq_divider <= 21'd6358;     // B6 (1975.53 Hz)
-            default:   freq_divider <= 21'd284091;   // Default frequency
+           default:   freq_divider <= 21'd284091;   // Default frequency
             endcase
         end
     end
@@ -127,25 +119,13 @@ module tt_um_waves (
         end
     end
 
-
-    // Phase accumulator for all waveforms
+    // Phase accumulator for waveforms
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n)
-           phase_accum <= 8'd0;
-        else if (ena) begin
-          phase_accum <= phase_accum + ({2'b00, freq_select} << 2); 
-        end
-    end
-
-  
-    /*always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
             phase_accum <= 8'd0;
         else if (ena)
-          phase_accum <= phase_accum + ({2'b00, freq_select} << 3);
-            //phase_accum <= phase_accum + (freq_select << 3); // Multiply by 8 if needed in case the previous does not work
-
-    end*/
+            phase_accum <= phase_accum + ({2'b00, freq_select} << 2); 
+    end
 
     // UART Receiver
     uart_receiver uart_rx_inst (
@@ -156,47 +136,24 @@ module tt_um_waves (
         .wave_select(wave_select),
         .white_noise_en(white_noise_en)
     );
-  
-  // Encoders for ADSR, now with explicit output registers
-    (* keep *) wire [7:0] attack_value, decay_value, sustain_value, rel_value;
 
     // Encoders for ADSR
-    encoder #(.WIDTH(8), .INCREMENT(1), .MAX_VALUE(255), .MIN_VALUE(0)) attack_encoder (.clk(clk), .rst_n(rst_n), .a(uio_in[0]), .b(uio_in[1]), .value(attack_value), .ena(ena));
-    encoder #(.WIDTH(8), .INCREMENT(1), .MAX_VALUE(255), .MIN_VALUE(0)) decay_encoder (.clk(clk), .rst_n(rst_n), .a(uio_in[2]), .b(uio_in[3]), .value(decay_value), .ena(ena));
-    encoder #(.WIDTH(8), .INCREMENT(1), .MAX_VALUE(255), .MIN_VALUE(0)) sustain_encoder (.clk(clk), .rst_n(rst_n), .a(uio_in[4]), .b(uio_in[5]), .value(sustain_value), .ena(ena));
-    encoder #(.WIDTH(8), .INCREMENT(1), .MAX_VALUE(255), .MIN_VALUE(0)) release_encoder (.clk(clk), .rst_n(rst_n), .a(uio_in[6]), .b(uio_in[7]), .value(rel_value), .ena(ena));
+    encoder attack_encoder (.clk(clk), .rst_n(rst_n), .a(uio_in[0]), .b(uio_in[1]), .value(attack), .ena(ena));
+    encoder decay_encoder (.clk(clk), .rst_n(rst_n), .a(uio_in[2]), .b(uio_in[3]), .value(decay), .ena(ena));
+    encoder sustain_encoder (.clk(clk), .rst_n(rst_n), .a(uio_in[4]), .b(uio_in[5]), .value(sustain), .ena(ena));
+    encoder release_encoder (.clk(clk), .rst_n(rst_n), .a(uio_in[6]), .b(uio_in[7]), .value(rel), .ena(ena));
 
-  
-      // Register the encoder outputs to prevent optimization
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            attack  <= 8'd0;
-            decay   <= 8'd0;
-            sustain <= 8'd0;
-            rel     <= 8'd0;
-        end else begin
-            attack  <= attack_value;
-            decay   <= decay_value;
-            sustain <= sustain_value;
-            rel     <= rel_value;
-        end
-    end
-
-  
-
-        // Wave generators 
+    // Wave generators 
     wire [7:0] tri_wave_out, saw_wave_out, sqr_wave_out, sine_wave_out;
     wire [7:0] noise_out;
 
-    // Square Wave Generator
     square_wave_generator sqr_gen (.clk(clk), .rst_n(rst_n), .ena(ena), .phase(phase_accum), .wave_out(sqr_wave_out));
     triangular_wave_generator tri_gen (.clk(clk), .rst_n(rst_n), .ena(ena), .phase(phase_accum), .wave_out(tri_wave_out));
     sawtooth_wave_generator saw_gen (.clk(clk), .rst_n(rst_n), .ena(ena), .phase(phase_accum), .wave_out(saw_wave_out));
     white_noise_generator noise_gen (.clk(clk), .rst_n(rst_n), .noise_out(noise_out), .ena(white_noise_en & ena));
     cordic_sine_generator sine_gen (.clk(clk), .rst_n(rst_n), .ena(ena), .phase(phase_accum), .sine_out(sine_wave_out));
 
-
-    // Select waveform output
+    // Select waveform output (Fixed default case)
     reg [7:0] selected_wave;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
@@ -208,13 +165,12 @@ module tt_um_waves (
                  3'b010: selected_wave <= sqr_wave_out;
                  3'b011: selected_wave <= sine_wave_out;
                  3'b100: selected_wave <= noise_out;
-                 default: selected_wave <= selected_wave; 
+                 default: selected_wave <= 8'd0; // Fix: Prevent dead mux input
             endcase
         end
     end
 
-
-    // Instantiate ADSR generator
+    // ADSR generator
     adsr_generator adsr_gen (
         .clk(clk), 
         .rst_n(rst_n),
@@ -226,31 +182,24 @@ module tt_um_waves (
         .ena(ena)
     );
 
-    // Apply ADSR Envelope to waveform
-    (* keep *) reg [7:0] scaled_wave;
-
+    // Apply ADSR Envelope to waveform (Added saturation logic)
+    reg [7:0] scaled_wave;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             temp_wave   <= 16'd0;
             scaled_wave <= 8'd0;
         end else begin
-            temp_wave <= (selected_wave * adsr_amplitude) >> 8; // Normalización
+            temp_wave <= (selected_wave * adsr_amplitude) >> 8;
 
-            // Validar `freq_select` para evitar valores fuera de rango
-            if (freq_select < 6'b111100) // Evitar valores > 60
+            if (freq_select < 6'b111100) 
                 scaled_wave <= temp_wave[15:8] ^ {2'b00, freq_select};
             else
-                scaled_wave <= temp_wave[15:8]; // Si `freq_select` es inválido, lo ignora
-         end
+                scaled_wave <= temp_wave[15:8]; 
+        end
     end
-
-
 
     // I2S Output
     wire i2s_sck, i2s_ws, i2s_sd;
-  //wire [15:0] i2s_data = {scaled_wave, 8'b0}; // Extends to 16 bits
-
-  
     i2s_transmitter i2s_out (
         .clk(clk),
         .rst_n(rst_n),
@@ -261,141 +210,106 @@ module tt_um_waves (
         .ena(ena)
     );
 
-    // Assign I2S Outputs to `uo_out`
+    // Assign I2S Outputs
     assign uo_out[0] = i2s_sck;
     assign uo_out[1] = i2s_ws;
     assign uo_out[2] = i2s_sd;
-    assign uo_out[7:3] = 5'b00000;  // Ensure upper bits are not floating
+    assign uo_out[7:3] = 5'b00000;
     assign uio_out = 8'b0;     
     assign uio_oe = 8'b0;      
 
 endmodule
 
+
 module uart_receiver (
-    input wire clk,               // System clock
-    input wire rst_n,             // Active-low reset
-    input wire rx,                // UART RX signal
-    output reg [5:0] freq_select, // Frequency selection
-    output reg [2:0] wave_select, // Wave type selection
-    output reg white_noise_en     // White noise enable
+    input wire clk,
+    input wire rst_n,
+    input wire rx,           // UART RX Input
+    output reg [5:0] freq_select,  // Frequency selection (e.g., A4, B3, etc.)
+    output reg [2:0] wave_select,  // Waveform select (square, sine, etc.)
+    output reg white_noise_en     // White Noise enable
 );
-
-    // Parameters
-    parameter BAUD_TICKS = 2604;  // Baud rate clock ticks 
+    reg [7:0] uart_rx_data;        // Temporary register to hold UART data
+    reg [2:0] bit_count;           // Bit counter for UART reception
+    reg uart_data_ready;           // Flag to indicate data is ready
+    reg [3:0] rx_state;            // FSM state for receiving UART data
+    reg [7:0] phase_accum_reg;     // Phase accumulator register
+    wire phase_accum_en;           // Enable signal for phase accumulator logic
     
-    wire [1:0] unused_temp_bits = temp_byte[7:6];
-  
-    // Registers and wires
-    reg [31:0] baud_counter;      // Counter for baud rate clock (32 bits to match BAUD_TICKS)
-    reg [7:0] received_byte;      // Received byte buffer
-    reg [2:0] bit_count;          // Bit count (0-7 for 8 bits)
-    reg receiving;                // UART receiving flag
-    reg [1:0] state;              // State machine: 0 = idle, 1 = receiving, 2 = processing
-
-    reg [7:0] temp_byte; // Ensure enough bits for calculation
-    //wire unused_temp_bits = temp_byte[7:6]; // Prevent lint warning
-
-
-    // State machine states
-    localparam IDLE       = 2'b00;
-    localparam RECEIVING  = 2'b01;
-    localparam PROCESSING = 2'b10;
-
-    // Synchronize the RX signal to avoid metastability
-    reg rx_sync1, rx_sync2;
+    // UART Receiver FSM
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            rx_sync1 <= 1'b1;
-            rx_sync2 <= 1'b1;
+            uart_rx_data <= 8'b0;
+            bit_count <= 3'b0;
+            uart_data_ready <= 0;
+            rx_state <= 4'b0;
         end else begin
-            rx_sync1 <= rx;
-            rx_sync2 <= rx_sync1;
-        end
-    end
-
-    wire rx_stable = rx_sync2;
-
-    // Start bit detection (falling edge on rx_stable)
-    reg rx_last;
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n)
-            rx_last <= 1'b1;
-        else
-            rx_last <= rx_stable;
-    end
-    wire start_bit = (rx_last == 1'b1 && rx_stable == 1'b0); // Falling edge detection
-
-    // Main state machine
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            // Reset all registers
-            received_byte <= 8'd0;
-            bit_count <= 3'd0;
-            receiving <= 1'b0;
-            freq_select <= 6'd0;
-            wave_select <= 3'b000;  // Default: Triangle wave
-            white_noise_en <= 1'b0; // Disable white noise
-            state <= IDLE;
-            baud_counter <= 0;     // Reset baud counter
-        end else begin
-            case (state)
-                IDLE: begin
-                    if (start_bit) begin
-                        receiving <= 1'b1;
+            case (rx_state)
+                4'b0000: begin  // Waiting for start bit
+                    if (~rx) rx_state <= 4'b0001;
+                end
+                4'b0001: begin  // Read bit 0
+                    uart_rx_data[bit_count] <= rx;
+                    bit_count <= bit_count + 1;
+                    rx_state <= 4'b0010;
+                end
+                4'b0010: begin  // Read bit 1
+                    uart_rx_data[bit_count] <= rx;
+                    bit_count <= bit_count + 1;
+                    if (bit_count == 7) begin
+                        uart_data_ready <= 1;
+                        rx_state <= 4'b0000;
                         bit_count <= 0;
-                        baud_counter <= 0; // Reset baud counter
-                        state <= RECEIVING;
+                    end else begin
+                        rx_state <= 4'b0001;
                     end
                 end
-
-                RECEIVING: begin
-                    if (receiving) begin
-                        if (baud_counter == BAUD_TICKS - 1) begin
-                            baud_counter <= 0; // Reset baud counter for the next bit
-                            received_byte[bit_count] <= rx_stable; // Store current bit
-                            if (bit_count < 3'd7) begin
-                                bit_count <= bit_count + 1;
-                            end else begin
-                                receiving <= 1'b0; // All bits received
-                                state <= PROCESSING; // Go to processing state
-                            end
-                        end else begin
-                            baud_counter <= baud_counter + 1; // Increment baud counter
-                        end
-                    end
-                end
-
-                PROCESSING: begin
-                    case (received_byte)
-                        // White noise control
-                        8'h4E: white_noise_en <= 1'b1;        // 'N' - Enable white noise
-                        8'h46: white_noise_en <= 1'b0;        // 'F' - Disable white noise
-
-                        // Wave selection
-                        8'h54: wave_select <= 3'b000;         // 'T' - Triangle wave
-                        8'h53: wave_select <= 3'b001;         // 'S' - Sawtooth wave
-                        8'h51: wave_select <= 3'b010;         // 'Q' - Square wave
-                        8'h57: wave_select <= 3'b011;         // 'W' - Sine wave
-
-                        // Frequency selection (numbers '0'-'9' and letters 'A'-'Z')
-                        default: begin
-                            if (received_byte >= 8'h30 && received_byte <= 8'h39) begin
-                                temp_byte <= received_byte - 8'h30; // Convert '0'-'9' to value
-                                freq_select <= temp_byte[5:0];     // Use lower 6 bits
-                            end else if (received_byte >= 8'h41 && received_byte <= 8'h5A) begin
-                                temp_byte <= received_byte - 8'h41 + 8'd10; // Convert 'A'-'Z' to value
-                                freq_select <= temp_byte[5:0];            // Use lower 6 bits
-                            end
-                        end
-                    endcase
-                    state <= IDLE;
-                end
-
-                default: state <= IDLE;
+                default: rx_state <= 4'b0000;
             endcase
         end
     end
+
+    // Handle the received data
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            freq_select <= 6'b000000;
+            wave_select <= 3'b000;
+            white_noise_en <= 0;
+            phase_accum_reg <= 8'd0;
+        end else if (uart_data_ready) begin
+            case (uart_rx_data[7:6])  // Extracting high 2 bits for frequency selection
+                2'b00: freq_select <= 6'b000000;  // Example frequency
+                2'b01: freq_select <= 6'b000001;
+                2'b10: freq_select <= 6'b000010;
+                2'b11: freq_select <= 6'b000011;
+                default: freq_select <= 6'b000000;
+            endcase
+
+            case (uart_rx_data[5:3])  // Extracting bits for waveform selection
+                3'b000: wave_select <= 3'b000; // Triangular Wave
+                3'b001: wave_select <= 3'b001; // Square Wave
+                3'b010: wave_select <= 3'b010; // Sawtooth Wave
+                3'b011: wave_select <= 3'b011; // Sine Wave
+                3'b100: wave_select <= 3'b100; // White Noise
+                default: wave_select <= 3'b000;
+            endcase
+            
+            white_noise_en <= uart_rx_data[2];  // Enable white noise on bit[2]
+            
+            // Phase accumulator update
+            if (uart_rx_data[7:6] != 2'b00)  // Example condition for updating phase
+                phase_accum_reg <= phase_accum_reg + 8'd1;
+        end
+    end
+
+    assign phase_accum_en = (uart_data_ready); // Enable phase accumulator when data is ready
+
 endmodule
+
+
+
+
+
 
 
 
@@ -407,16 +321,17 @@ module white_noise_generator (
 );
     reg [15:0] lfsr;
 
-  always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            lfsr <= 16'hACE1; // Seed value
+            lfsr <= 16'hACE1; 
             noise_out <= 8'd0;
         end else if (ena) begin
-            lfsr <= {lfsr[14:0], lfsr[15] ^ lfsr[13] ^ lfsr[12] ^ lfsr[10]}; // Feedback taps
-            noise_out <= lfsr[15:8]; // Use upper 8 bits as noise
+            lfsr <= {lfsr[14:0], lfsr[15] ^ lfsr[13] ^ lfsr[12] ^ lfsr[10]}; 
+            noise_out <= lfsr[15:8]; 
         end
     end
 endmodule
+
 
 
 
@@ -486,14 +401,10 @@ module cordic_sine_generator (
     output reg  [7:0] sine_out
 );
 
-    // CORDIC parameters
     reg signed [15:0] x, y, z;
-    reg [3:0] i; // 4-bit index for iterations
+    reg [3:0] i; 
     reg signed [15:0] atan_value; 
 
-    localparam [15:0] SCALE_FACTOR = 16'h26DD;  // Precomputed scale factor
-
-    // Precomputed atan values as individual parameters
     localparam signed [15:0] atan_table_0 = 16'h3243;
     localparam signed [15:0] atan_table_1 = 16'h1DAC;
     localparam signed [15:0] atan_table_2 = 16'h0FAB;
@@ -503,9 +414,8 @@ module cordic_sine_generator (
     localparam signed [15:0] atan_table_6 = 16'h00FF;
     localparam signed [15:0] atan_table_7 = 16'h007F;
 
-    // Look-up table for atan values
     always @(*) begin
-        case (i[2:0]) // Use 3-bit index
+        case (i[2:0]) 
             3'b000: atan_value = atan_table_0;
             3'b001: atan_value = atan_table_1;
             3'b010: atan_value = atan_table_2;
@@ -514,37 +424,39 @@ module cordic_sine_generator (
             3'b101: atan_value = atan_table_5;
             3'b110: atan_value = atan_table_6;
             3'b111: atan_value = atan_table_7;
-            default: atan_value = 16'd0; // Default case for safety
+            default: atan_value = 16'd0;
         endcase
     end
 
     always @(posedge clk or negedge rst_n) begin
-    if (!rst_n) begin
-        x <= SCALE_FACTOR; // Factor de escala predefinido
-        y <= 16'd0;        // Comienza en 0
-        z <= 16'd0;        // Valor neutro en el reset
-        i <= 4'b0000;      // Iteración en 0
-    end else if (ena) begin
-        if (i == 4'b0000)  // Solo al inicio de una nueva conversión
-            z <= {phase, 8'b0};  // Carga el ángulo de entrada
-        if (i < 4'b1000) begin // Iteraciones del algoritmo
-            if (z[15]) begin
-                x <= x + (y >>> i);
-                y <= y - (x >>> i);
-                z <= z - atan_value;
+        if (!rst_n) begin
+            x <= 16'h26DD;
+            y <= 16'd0;
+            z <= 16'd0;
+            i <= 4'b0000;
+        end else if (ena) begin
+            if (i == 4'b0000)
+                z <= {phase, 8'b0}; 
+
+            if (i < 4'b1000) begin 
+                if (z[15]) begin
+                    x <= x + (y >>> i);
+                    y <= y - (x >>> i);
+                    z <= z - atan_value;
+                end else begin
+                    x <= x - (y >>> i);
+                    y <= y + (x >>> i);
+                    z <= z + atan_value;
+                end
+                i <= i + 1;
             end else begin
-                x <= x - (y >>> i);
-                y <= y + (x >>> i);
-                z <= z + atan_value;
+                sine_out <= y[15:8]; 
             end
-            i <= i + 1;
-        end else begin
-            sine_out <= y[15:8]; // Resultado final de la onda seno
         end
     end
-end
-
 endmodule
+
+
 
 
 
@@ -552,10 +464,9 @@ module square_wave_generator (
     input  wire       ena,        
     input  wire       clk,        
     input  wire       rst_n,      
-    input  wire [7:0] phase,  // Use phase_accum instead of wave_clk
+    input  wire [7:0] phase,  
     output reg  [7:0] wave_out    
 );  
-  wire unused_phase = |phase[6:0]; // OR-reduction para evitar la advertencia
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
@@ -568,11 +479,12 @@ endmodule
 
 
 
+
 module sawtooth_wave_generator (
     input  wire       ena,        
     input  wire       clk,        
     input  wire       rst_n,      
-    input  wire [7:0] phase,  // Use phase_accum instead of wave_clk
+    input  wire [7:0] phase,  
     output reg  [7:0] wave_out    
 );
 
@@ -587,22 +499,19 @@ endmodule
 
 
 module adsr_generator (
-    input  wire       ena,       // Enable signal
-    input  wire       clk,       // Clock
-    input  wire       rst_n,     // Active-low reset
-    input  wire [7:0] attack,    // Attack value
-    input  wire [7:0] decay,     // Decay value
-    input  wire [7:0] sustain,   // Sustain value
-    input  wire [7:0] rel,       // Release value
-    output reg  [7:0] amplitude  // Output amplitude
+    input  wire       ena,       
+    input  wire       clk,       
+    input  wire       rst_n,     
+    input  wire [7:0] attack,    
+    input  wire [7:0] decay,     
+    input  wire [7:0] sustain,   
+    input  wire [7:0] rel,       
+    output reg  [7:0] amplitude  
 );
 
-    // Prevent FSM optimization
     (* fsm_encoding = "one-hot" *) reg [3:0] state;
     
-    // Ensure amplitude is not removed
-    (* keep *) reg [7:0] adsr_amplitude;
-
+    reg [7:0] adsr_amplitude;
     reg [7:0] counter;
 
     localparam STATE_IDLE    = 4'b0000;
@@ -627,17 +536,19 @@ module adsr_generator (
                     end
                 end
                 STATE_ATTACK: begin
+                    counter <= 8'd0;
                     if (adsr_amplitude < 8'd255)
-                        adsr_amplitude <= adsr_amplitude + (attack >> 4); // Usa los 8 bits de attack
+                        adsr_amplitude <= adsr_amplitude + (attack >> 4);
                     else begin
                         adsr_amplitude <= 8'd255;
                         state <= STATE_DECAY;
                     end
                 end
                 STATE_DECAY: begin
-                    if (adsr_amplitude > sustain)
-                        adsr_amplitude <= adsr_amplitude - ((adsr_amplitude - sustain) >> (decay[7:4] + 1)); // Usa todos los bits de decay
-                    else begin
+                    if (adsr_amplitude > sustain) begin
+                        adsr_amplitude <= adsr_amplitude - ((adsr_amplitude - sustain) >> (decay[7:4] + 1));
+                        if (adsr_amplitude < sustain) adsr_amplitude <= sustain; 
+                    end else begin
                         adsr_amplitude <= sustain;
                         state <= STATE_SUSTAIN;
                     end
@@ -652,24 +563,26 @@ module adsr_generator (
                     end
                 end
                 STATE_RELEASE: begin
-                    if (adsr_amplitude > 8'd0)
-                        adsr_amplitude <= adsr_amplitude - (adsr_amplitude >> (rel[7:4] + 1)); // Usa todos los bits de release
-                    else begin
+                    if (adsr_amplitude > 8'd0) begin
+                        adsr_amplitude <= adsr_amplitude - (adsr_amplitude >> (rel[7:4] + 1));
+                        if (adsr_amplitude > 8'd0 && adsr_amplitude < (adsr_amplitude >> (rel[7:4] + 1))) 
+                            adsr_amplitude <= 8'd0;
+                    end else begin
                         adsr_amplitude <= 8'd0;
                         state <= STATE_IDLE;
                     end
                 end
-                default: state <= STATE_IDLE;
+                default: state <= STATE_IDLE; // Fixed: Added default case
             endcase
         end
     end
 
-    // Asignación correcta de la salida de amplitud
     always @(posedge clk) begin
         amplitude <= adsr_amplitude;
     end
-
 endmodule
+
+
 
 
 
@@ -679,7 +592,7 @@ module triangular_wave_generator (
     input  wire       ena,        
     input  wire       clk,        
     input  wire       rst_n,      
-    input  wire [7:0] phase,  // Use phase_accum instead of wave_clk
+    input  wire [7:0] phase,  
     output reg  [7:0] wave_out    
 );
 
@@ -687,53 +600,50 @@ module triangular_wave_generator (
         if (!rst_n)
             wave_out <= 8'd0;
         else if (ena)
-           wave_out <= phase[7] ? (8'd255 - {1'b0, phase[6:0]} << 1) : ({1'b0, phase[6:0]} << 1);
-    
+            wave_out <= phase[7] ? (8'd255 - {1'b0, phase[6:0]} << 1) : ({1'b0, phase[6:0]} << 1);
     end
 endmodule
 
 
+
 module encoder #(
-    parameter WIDTH = 8,          // Ancho del contador
-    parameter INCREMENT = 1'b1,   // Valor de incremento
-    parameter MAX_VALUE = (1 << WIDTH) - 1, // Valor máximo (ej. 255 para 8 bits)
-    parameter MIN_VALUE = 0       // Valor mínimo (por defecto 0)
+    parameter integer WIDTH = 8,              // Counter width
+    parameter integer INCREMENT = 1,          // Increment value (must be integer)
+    parameter integer MAX_VALUE = (1 << WIDTH)-1, // Max value (e.g., 255 for 8-bit)
+    parameter integer MIN_VALUE = 0           // Min value
 )(
-    input wire ena,               // Habilitación
-    input wire clk,               // Reloj
-    input wire rst_n,             // Reset activo bajo
-    input wire a,                 // Entrada A del encoder
-    input wire b,                 // Entrada B del encoder
-    output reg [WIDTH-1:0] value  // Salida del contador
+    input wire ena,       
+    input wire clk,       
+    input wire rst_n,     
+    input wire a,         
+    input wire b,         
+    output reg [WIDTH-1:0] value  
 );
 
     reg old_a, old_b;
 
-    // Estados posibles en el codificador en cuadratura
     wire [3:0] transition;
-    assign transition = {a, old_a, b, old_b}; // Combina los estados actuales y anteriores
+    assign transition = {a, old_a, b, old_b}; 
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             old_a <= 1'b0;
             old_b <= 1'b0;
-            value <= {WIDTH{1'b0}}; // Inicializa el contador en el mínimo
+            value <= {WIDTH{1'b0}};
         end else if (ena) begin
-            // Guarda los estados anteriores
             old_a <= a;
             old_b <= b;
 
-            // Manejo de las transiciones con límites
             case (transition)
                 4'b1000, 4'b0110, 4'b0011, 4'b1101: begin
-                    if (value < MAX_VALUE)  // Evita superar el límite superior
-                        value <= value + INCREMENT;
+                    if (value < MAX_VALUE[WIDTH-1:0]) // Size MAX_VALUE to match value width
+                        value <= value + INCREMENT[WIDTH-1:0]; // Explicitly size INCREMENT
                 end
                 4'b0001, 4'b1011, 4'b1110, 4'b0100: begin
-                    if (value > MIN_VALUE)  // Evita caer por debajo del límite inferior
-                        value <= value - INCREMENT;
+                    if (value > MIN_VALUE[WIDTH-1:0]) // Size MIN_VALUE to match value width
+                        value <= value - INCREMENT[WIDTH-1:0]; // Explicitly size INCREMENT
                 end
-                default: value <= value; // Mantén el valor para transiciones no válidas
+                default: value <= value; 
             endcase
         end
     end

@@ -7,11 +7,11 @@ module tb;
 
   initial begin
     $dumpfile("tb.vcd");
-    $dumpvars(0, tb); // Removed internal signal references
+    $dumpvars(0, tb);
   end
 
   reg clk = 0;
-  always #20 clk = ~clk;
+  always #20 clk = ~clk;  // 25 MHz clock (40ns period)
 
   reg rst_n = 0;
   reg ena = 0;
@@ -37,59 +37,60 @@ module tb;
       .rst_n  (rst_n)
   );
 
+  // Reset and enable
   initial begin
     #100;
     rst_n = 1;
     #100;
     ena = 1;
-
-    #200;
-    ui_in = 8'h41; // Arbitrary UART input
-
-    #500000;
-    $finish;
   end
 
-  // UART transmission simulation (for frequency and waveform selection)
+  // UART Transmission Simulation (for frequency and waveform selection)
   task uart_send(input [7:0] data);
-    reg [3:0] i;
+    integer i;
     begin
       ui_in[0] <= 0;  // Start bit
-      @(posedge clk); #200;
+      @(posedge clk); #8680;  // Simulating 115200 baud (1/115200 ≈ 8680ns)
 
       for (i = 0; i < 8; i = i + 1) begin
         ui_in[0] <= data[i];
-        @(posedge clk); #200;
+        @(posedge clk); #8680;
       end
 
       ui_in[0] <= 1;  // Stop bit
-      @(posedge clk); #200;
+      @(posedge clk); #8680;
     end
   endtask
 
-  // Testing frequency and waveform selection via UART
+  // Monitor I2S Output
+  always @(posedge clk) begin
+    $display("I2S: SCK=%b, WS=%b, SD=%b", i2s_sck, i2s_ws, i2s_sd);
+  end
+
+  // Testing Frequency and Waveform Selection via UART
   initial begin
     #200;
 
     uart_send(8'h54);  // 'T' for Triangle wave
-    #500;
+    #1000;
     $display("Triangle wave test completed");
 
     uart_send(8'h51);  // 'Q' for Square wave
-    #500;
+    #1000;
     $display("Square wave test completed");
 
     uart_send(8'h57);  // 'W' for Sine wave (CORDIC)
-    #500;
+    #1000;
     $display("Sine wave test completed");
 
     uart_send(8'h53);  // 'S' for Sawtooth wave
-    #500;
-    $display("Sine wave test completed");
-    
+    #1000;
+    $display("Sawtooth wave test completed");
+
+    // Frequency Selection (Octaves & Notes)
     for (int j = 0; j < 10; j = j + 1) begin
       uart_send(8'h30 + j);
-      #500;
+      #2000;
       $display("Frequency %d selected - I2S SD: %b", j, i2s_sd);
     end
 
@@ -98,7 +99,7 @@ module tb;
 
   // Testing ADSR using Encoders (via `uio_in`)
   initial begin
-    #1000;
+    #5000;
     $display("Testing Encoder Control for ADSR...");
 
     // Simulate increasing attack using rotary encoder
@@ -106,39 +107,40 @@ module tb;
     #5000;
     uio_in = 8'b0000_0010; 
     #5000;
-    uio_in = 8'b0000_0000; // Stop rotating
+    uio_in = 8'b0000_0000;
     #5000;
     $display("ADSR Attack Level Test completed");
 
-    // Simulate increasing decay using rotary encoder
+    // Simulate increasing decay
     uio_in = 8'b0000_0100; 
     #5000;
     uio_in = 8'b0000_1000; 
     #5000;
-    uio_in = 8'b0000_0000; // Stop rotating
+    uio_in = 8'b0000_0000;
     #5000;
     $display("ADSR Decay Level Test completed");
 
-    // Simulate increasing sustain using rotary encoder
+    // Simulate increasing sustain
     uio_in = 8'b0001_0000; 
     #5000;
     uio_in = 8'b0010_0000; 
     #5000;
-    uio_in = 8'b0000_0000; // Stop rotating
+    uio_in = 8'b0000_0000;
     #5000;
     $display("ADSR Sustain Level Test completed");
 
-    // Simulate increasing release using rotary encoder
+    // Simulate increasing release
     uio_in = 8'b0100_0000; 
     #5000;
     uio_in = 8'b1000_0000; 
     #5000;
-    uio_in = 8'b0000_0000; // Stop rotating
+    uio_in = 8'b0000_0000;
     #5000;
     $display("ADSR Release Level Test completed");
 
     $display("ADSR Encoder Testing Complete.");
     #2000;
+    $finish;
   end
 
 endmodule
