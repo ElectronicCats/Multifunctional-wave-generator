@@ -631,21 +631,22 @@ endmodule
 
 
 
-module triangular_wave_generator (
-    input  wire       ena,        
-    input  wire       clk,        
-    input  wire       rst_n,      
-    input  wire [7:0] phase,  
-    output reg  [7:0] wave_out    
-);
+module square_wave_generator (
+    input  wire       ena,         // Enable signal
+    input  wire       clk,         // Clock signal
+    input  wire       rst_n,       // Active-low reset signal
+    input  wire [7:0] phase,       // 8-bit phase input
+    output reg  [7:0] wave_out     // 8-bit output wave
+);  
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
-            wave_out <= 8'd0;
+            wave_out <= 8'd0;  // Reset output on reset
         else if (ena)
-            wave_out <= phase[7] ? (8'd255 - {1'b0, phase[6:0]} << 1) : ({1'b0, phase[6:0]} << 1);
+            wave_out <= phase[7] ? 8'd255 : 8'd0;  // Use the most significant bit of phase
     end
 endmodule
+
 
 
 
