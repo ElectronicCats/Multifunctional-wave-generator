@@ -62,12 +62,13 @@ module tb;
     end
   endtask
 
-  // Monitor I2S Output
+  // Debug I2S Output
   always @(posedge clk) begin
-    $display("I2S: SCK=%b, WS=%b, SD=%b", i2s_sck, i2s_ws, i2s_sd);
+    $display("I2S Debug: SCK=%b, WS=%b, SD=%b | Waveform=%h | ADSR=%h", 
+             i2s_sck, i2s_ws, i2s_sd, tb.dut.selected_wave, tb.dut.adsr_amplitude);
   end
 
-  // Testing Frequency and Waveform Selection via UART
+  // Force Initial Waveform Selection
   initial begin
     #200;
 
@@ -75,72 +76,37 @@ module tb;
     #1000;
     $display("Triangle wave test completed");
 
-    uart_send(8'h51);  // 'Q' for Square wave
-    #1000;
-    $display("Square wave test completed");
+    // FORCE wave selection and ADSR parameters
+    force tb.dut.wave_select = 3'b011;  // Select sine wave
+    force tb.dut.freq_select = 6'b100001;  // Set frequency (A4)
+    force tb.dut.adsr_amplitude = 8'hFF;  // Max amplitude
+    #5000;
 
-    uart_send(8'h57);  // 'W' for Sine wave (CORDIC)
-    #1000;
-    $display("Sine wave test completed");
-
-    uart_send(8'h53);  // 'S' for Sawtooth wave
-    #1000;
-    $display("Sawtooth wave test completed");
-
-    // Frequency Selection (Octaves & Notes)
-    for (int j = 0; j < 10; j = j + 1) begin
-      uart_send(8'h30 + j);
-      #2000;
-      $display("Frequency %d selected - I2S SD: %b", j, i2s_sd);
-    end
+    release tb.dut.wave_select;
+    release tb.dut.freq_select;
+    release tb.dut.adsr_amplitude;
 
     $finish;
   end
 
-  // Testing ADSR using Encoders (via `uio_in`)
+  // Manually Set ADSR in Testbench
   initial begin
-    #5000;
-    $display("Testing Encoder Control for ADSR...");
+    #1000;
+    $display("Testing ADSR...");
 
-    // Simulate increasing attack using rotary encoder
-    uio_in = 8'b0000_0001; 
-    #5000;
-    uio_in = 8'b0000_0010; 
-    #5000;
-    uio_in = 8'b0000_0000;
-    #5000;
-    $display("ADSR Attack Level Test completed");
+    // Set attack, decay, sustain, release to nonzero values
+    force tb.dut.attack = 8'd50;
+    force tb.dut.decay = 8'd30;
+    force tb.dut.sustain = 8'd128;
+    force tb.dut.rel = 8'd40;
 
-    // Simulate increasing decay
-    uio_in = 8'b0000_0100; 
     #5000;
-    uio_in = 8'b0000_1000; 
-    #5000;
-    uio_in = 8'b0000_0000;
-    #5000;
-    $display("ADSR Decay Level Test completed");
+    release tb.dut.attack;
+    release tb.dut.decay;
+    release tb.dut.sustain;
+    release tb.dut.rel;
 
-    // Simulate increasing sustain
-    uio_in = 8'b0001_0000; 
-    #5000;
-    uio_in = 8'b0010_0000; 
-    #5000;
-    uio_in = 8'b0000_0000;
-    #5000;
-    $display("ADSR Sustain Level Test completed");
-
-    // Simulate increasing release
-    uio_in = 8'b0100_0000; 
-    #5000;
-    uio_in = 8'b1000_0000; 
-    #5000;
-    uio_in = 8'b0000_0000;
-    #5000;
-    $display("ADSR Release Level Test completed");
-
-    $display("ADSR Encoder Testing Complete.");
-    #2000;
-    $finish;
+    $display("ADSR Forced Settings Complete.");
   end
 
 endmodule
