@@ -20,6 +20,10 @@ module tt_um_waves (
     wire [7:0] adsr_amplitude;
     reg [15:0] temp_wave; 
     reg [7:0] attack, decay, sustain, rel; 
+  
+    wire unused_ui_in = |ui_in[7:1]; 
+    wire unused_temp_wave = |temp_wave[7:0];
+
 
     // Frequency Divider
     reg [20:0] freq_divider;
@@ -224,87 +228,141 @@ endmodule
 module uart_receiver (
     input wire clk,
     input wire rst_n,
-    input wire rx,           // UART RX Input
-    output reg [5:0] freq_select,  // Frequency selection (e.g., A4, B3, etc.)
-    output reg [2:0] wave_select,  // Waveform select (square, sine, etc.)
+    input wire rx,               // UART RX Input
+    output reg [5:0] freq_select, // Frequency selection (e.g., A4, B3, etc.)
+    output reg [2:0] wave_select, // Waveform select (square, sine, etc.)
     output reg white_noise_en     // White Noise enable
 );
-    reg [7:0] uart_rx_data;        // Temporary register to hold UART data
-    reg [2:0] bit_count;           // Bit counter for UART reception
-    reg uart_data_ready;           // Flag to indicate data is ready
-    reg [3:0] rx_state;            // FSM state for receiving UART data
-    reg [7:0] phase_accum_reg;     // Phase accumulator register
-    wire phase_accum_en;           // Enable signal for phase accumulator logic
     
-    // UART Receiver FSM
+    // Parameters
+    parameter BAUD_TICKS = 2604;  // Baud rate clock ticks 
+    
+    // Registers and Wires
+    reg [31:0] baud_counter;      // Baud rate clock counter
+    reg [7:0] received_byte;      // Received byte buffer
+    reg [2:0] bit_count;          // Bit counter (0-7 for 8 bits)
+    reg receiving;                // UART receiving flag
+    reg uart_data_ready;           // Reintroduced this flag
+    reg [1:0] state;              // State machine: 0 = idle, 1 = receiving, 2 = processing
+
+    reg [7:0] phase_accum_reg;    // Phase accumulator register
+    wire phase_accum_en;          // Enable signal for phase accumulator
+
+    // State machine states (Optimized to 2 bits)
+    localparam IDLE       = 2'b00;
+    localparam RECEIVING  = 2'b01;
+    localparam PROCESSING = 2'b10;
+
+    // Synchronize the RX signal to avoid metastability
+    reg rx_sync1, rx_sync2;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            uart_rx_data <= 8'b0;
-            bit_count <= 3'b0;
-            uart_data_ready <= 0;
-            rx_state <= 4'b0;
+            rx_sync1 <= 1'b1;
+            rx_sync2 <= 1'b1;
         end else begin
-            case (rx_state)
-                4'b0000: begin  // Waiting for start bit
-                    if (~rx) rx_state <= 4'b0001;
-                end
-                4'b0001: begin  // Read bit 0
-                    uart_rx_data[bit_count] <= rx;
-                    bit_count <= bit_count + 1;
-                    rx_state <= 4'b0010;
-                end
-                4'b0010: begin  // Read bit 1
-                    uart_rx_data[bit_count] <= rx;
-                    bit_count <= bit_count + 1;
-                    if (bit_count == 7) begin
-                        uart_data_ready <= 1;
-                        rx_state <= 4'b0000;
+            rx_sync1 <= rx;
+            rx_sync2 <= rx_sync1;
+        end
+    end
+
+    wire rx_stable = rx_sync2;
+
+    // Start bit detection (falling edge on rx_stable)
+    reg rx_last;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            rx_last <= 1'b1;
+        else
+            rx_last <= rx_stable;
+    end
+    wire start_bit = (rx_last == 1'b1 && rx_stable == 1'b0); // Falling edge detection
+
+    // Main state machine
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            // Reset all registers
+            received_byte <= 8'd0;
+            bit_count <= 3'd0;
+            receiving <= 1'b0;
+            uart_data_ready <= 1'b0;  // **Reset the uart_data_ready flag**
+            freq_select <= 6'd0;
+            wave_select <= 3'b000;  // Default: Triangle wave
+            white_noise_en <= 1'b0; // Disable white noise
+            state <= IDLE;
+            baud_counter <= 0;     // Reset baud counter
+            phase_accum_reg <= 8'd0;
+        end else begin
+            case (state)
+                IDLE: begin
+                    if (start_bit) begin
+                        receiving <= 1'b1;
+                        uart_data_ready <= 1'b0;  // **Clear the flag at start**
                         bit_count <= 0;
-                    end else begin
-                        rx_state <= 4'b0001;
+                        baud_counter <= 0; // Reset baud counter
+                        state <= RECEIVING;
                     end
                 end
-                default: rx_state <= 4'b0000;
+
+                RECEIVING: begin
+                    if (receiving) begin
+                        if (baud_counter == BAUD_TICKS - 1) begin
+                            baud_counter <= 0; // Reset baud counter for the next bit
+                            received_byte[bit_count] <= rx_stable; // Store current bit
+                            if (bit_count < 3'd7) begin
+                                bit_count <= bit_count + 1;
+                            end else begin
+                                receiving <= 1'b0; // All bits received
+                                uart_data_ready <= 1'b1; // **Set flag when byte is complete**
+                                state <= PROCESSING; // Go to processing state
+                            end
+                        end else begin
+                            baud_counter <= baud_counter + 1; // Increment baud counter
+                        end
+                    end
+                end
+
+                PROCESSING: begin
+                    if (uart_data_ready) begin  // Ensure data is processed only when valid
+                        case (received_byte)
+                            // White noise control
+                            8'h4E: white_noise_en <= 1'b1;        // 'N' - Enable white noise
+                            8'h46: white_noise_en <= 1'b0;        // 'F' - Disable white noise
+
+                            // Wave selection
+                            8'h54: wave_select <= 3'b000;         // 'T' - Triangle wave
+                            8'h53: wave_select <= 3'b001;         // 'S' - Sawtooth wave
+                            8'h51: wave_select <= 3'b010;         // 'Q' - Square wave
+                            8'h57: wave_select <= 3'b011;         // 'W' - Sine wave
+
+                            // Frequency selection (numbers '0'-'9' and letters 'A'-'Z')
+                            default: begin
+                                if (received_byte >= 8'h30 && received_byte <= 8'h39) begin
+                                    freq_select <= received_byte[5:0] - 6'h30; // Convert '0'-'9' to value
+                                end else if (received_byte >= 8'h41 && received_byte <= 8'h5A) begin
+                                    freq_select <= received_byte[5:0] - 6'h41 + 6'd10; // Convert 'A'-'Z' to value
+                                end
+                            end
+                        endcase
+                        
+                        // **Phase Accumulator Update**
+                        phase_accum_reg <= phase_accum_reg + {2'b00, freq_select}; 
+
+                        // **Clear uart_data_ready to wait for next byte**
+                        uart_data_ready <= 1'b0;
+                    end
+                    state <= IDLE;
+                end
+
+                default: state <= IDLE;
             endcase
         end
     end
 
-    // Handle the received data
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            freq_select <= 6'b000000;
-            wave_select <= 3'b000;
-            white_noise_en <= 0;
-            phase_accum_reg <= 8'd0;
-        end else if (uart_data_ready) begin
-            case (uart_rx_data[7:6])  // Extracting high 2 bits for frequency selection
-                2'b00: freq_select <= 6'b000000;  // Example frequency
-                2'b01: freq_select <= 6'b000001;
-                2'b10: freq_select <= 6'b000010;
-                2'b11: freq_select <= 6'b000011;
-                default: freq_select <= 6'b000000;
-            endcase
-
-            case (uart_rx_data[5:3])  // Extracting bits for waveform selection
-                3'b000: wave_select <= 3'b000; // Triangular Wave
-                3'b001: wave_select <= 3'b001; // Square Wave
-                3'b010: wave_select <= 3'b010; // Sawtooth Wave
-                3'b011: wave_select <= 3'b011; // Sine Wave
-                3'b100: wave_select <= 3'b100; // White Noise
-                default: wave_select <= 3'b000;
-            endcase
-            
-            white_noise_en <= uart_rx_data[2];  // Enable white noise on bit[2]
-            
-            // Phase accumulator update
-            if (uart_rx_data[7:6] != 2'b00)  // Example condition for updating phase
-                phase_accum_reg <= phase_accum_reg + 8'd1;
-        end
-    end
-
-    assign phase_accum_en = (uart_data_ready); // Enable phase accumulator when data is ready
+    assign phase_accum_en = uart_data_ready; // Enable phase accumulator when data is ready
 
 endmodule
+
+
 
 
 
