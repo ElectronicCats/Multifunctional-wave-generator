@@ -242,12 +242,10 @@ module uart_receiver (
     reg [7:0] received_byte;      // Received byte buffer
     reg [2:0] bit_count;          // Bit counter (0-7 for 8 bits)
     reg receiving;                // UART receiving flag
-    reg uart_data_ready;           // Reintroduced this flag
     reg [1:0] state;              // State machine: 0 = idle, 1 = receiving, 2 = processing
 
     reg [7:0] phase_accum_reg;    // Phase accumulator register
-    wire phase_accum_en;          // Enable signal for phase accumulator
-
+   
     // State machine states (Optimized to 2 bits)
     localparam IDLE       = 2'b00;
     localparam RECEIVING  = 2'b01;
@@ -284,7 +282,6 @@ module uart_receiver (
             received_byte <= 8'd0;
             bit_count <= 3'd0;
             receiving <= 1'b0;
-            uart_data_ready <= 1'b0;  // **Reset the uart_data_ready flag**
             freq_select <= 6'd0;
             wave_select <= 3'b000;  // Default: Triangle wave
             white_noise_en <= 1'b0; // Disable white noise
@@ -296,7 +293,6 @@ module uart_receiver (
                 IDLE: begin
                     if (start_bit) begin
                         receiving <= 1'b1;
-                        uart_data_ready <= 1'b0;  // **Clear the flag at start**
                         bit_count <= 0;
                         baud_counter <= 0; // Reset baud counter
                         state <= RECEIVING;
@@ -312,7 +308,6 @@ module uart_receiver (
                                 bit_count <= bit_count + 1;
                             end else begin
                                 receiving <= 1'b0; // All bits received
-                                uart_data_ready <= 1'b1; // **Set flag when byte is complete**
                                 state <= PROCESSING; // Go to processing state
                             end
                         end else begin
@@ -322,34 +317,32 @@ module uart_receiver (
                 end
 
                 PROCESSING: begin
-                    if (uart_data_ready) begin  // Ensure data is processed only when valid
-                        case (received_byte)
-                            // White noise control
-                            8'h4E: white_noise_en <= 1'b1;        // 'N' - Enable white noise
-                            8'h46: white_noise_en <= 1'b0;        // 'F' - Disable white noise
+                    // Process the received byte
+                    case (received_byte)
+                        // White noise control
+                        8'h4E: white_noise_en <= 1'b1;        // 'N' - Enable white noise
+                        8'h46: white_noise_en <= 1'b0;        // 'F' - Disable white noise
 
-                            // Wave selection
-                            8'h54: wave_select <= 3'b000;         // 'T' - Triangle wave
-                            8'h53: wave_select <= 3'b001;         // 'S' - Sawtooth wave
-                            8'h51: wave_select <= 3'b010;         // 'Q' - Square wave
-                            8'h57: wave_select <= 3'b011;         // 'W' - Sine wave
+                        // Wave selection
+                        8'h54: wave_select <= 3'b000;         // 'T' - Triangle wave
+                        8'h53: wave_select <= 3'b001;         // 'S' - Sawtooth wave
+                        8'h51: wave_select <= 3'b010;         // 'Q' - Square wave
+                        8'h57: wave_select <= 3'b011;         // 'W' - Sine wave
 
-                            // Frequency selection (numbers '0'-'9' and letters 'A'-'Z')
-                            default: begin
-                                if (received_byte >= 8'h30 && received_byte <= 8'h39) begin
-                                    freq_select <= received_byte[5:0] - 6'h30; // Convert '0'-'9' to value
-                                end else if (received_byte >= 8'h41 && received_byte <= 8'h5A) begin
-                                    freq_select <= received_byte[5:0] - 6'h41 + 6'd10; // Convert 'A'-'Z' to value
-                                end
+                        // Frequency selection (numbers '0'-'9' and letters 'A'-'Z')
+                        default: begin
+                            if (received_byte >= 8'h30 && received_byte <= 8'h39) begin
+                                freq_select <= received_byte[5:0] - 6'h30; // Convert '0'-'9' to value
+                            end else if (received_byte >= 8'h41 && received_byte <= 8'h5A) begin
+                                freq_select <= received_byte[5:0] - 6'h41 + 6'd10; // Convert 'A'-'Z' to value
                             end
-                        endcase
-                        
-                        // **Phase Accumulator Update**
-                        phase_accum_reg <= phase_accum_reg + {2'b00, freq_select}; 
+                        end
+                    endcase
+                    
+                    // **Phase Accumulator Update**
+                    phase_accum_reg <= phase_accum_reg + {2'b00, freq_select}; 
 
-                        // **Clear uart_data_ready to wait for next byte**
-                        uart_data_ready <= 1'b0;
-                    end
+                    // Go back to IDLE after processing
                     state <= IDLE;
                 end
 
@@ -358,13 +351,7 @@ module uart_receiver (
         end
     end
 
-    assign phase_accum_en = uart_data_ready; // Enable phase accumulator when data is ready
-
 endmodule
-
-
-
-
 
 
 
@@ -446,8 +433,6 @@ module i2s_transmitter (
         end
     end
 endmodule
-
-
 
 
 
