@@ -503,22 +503,21 @@ endmodule
 
 
 
-module square_wave_generator (
+module triangular_wave_generator (
     input  wire       ena,        
     input  wire       clk,        
     input  wire       rst_n,      
     input  wire [7:0] phase,  
     output reg  [7:0] wave_out    
-);  
+);
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
             wave_out <= 8'd0;
         else if (ena)
-            wave_out <= phase[7] ? 8'd255 : 8'd0; // High for first half, low for second half
+            wave_out <= phase[7] ? (8'd255 - {1'b0, phase[6:0]} << 1) : ({1'b0, phase[6:0]} << 1);
     end
 endmodule
-
 
 
 
@@ -624,9 +623,6 @@ module adsr_generator (
         amplitude <= adsr_amplitude;
     end
 endmodule
-
-
-
 
 
 
