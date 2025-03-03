@@ -334,7 +334,7 @@ module uart_receiver (
                             if (received_byte >= 8'h30 && received_byte <= 8'h39) begin
                                 freq_select <= received_byte[5:0] - 6'h30; // Convert '0'-'9' to value
                             end else if (received_byte >= 8'h41 && received_byte <= 8'h5A) begin
-                                freq_select <= received_byte[5:0] - 6'h41 + 6'd10; // Convert 'A'-'Z' to value
+                                freq_select <= {1'b0, received_byte[5:0]} - 7'd65 + 6'd10; // Convert 'A'-'Z' to value
                             end
                         end
                     endcase
@@ -352,9 +352,6 @@ module uart_receiver (
     end
 
 endmodule
-
-
-
 
 
 
@@ -376,7 +373,6 @@ module white_noise_generator (
         end
     end
 endmodule
-
 
 
 
@@ -501,8 +497,6 @@ endmodule
 
 
 
-
-
 module triangular_wave_generator (
     input  wire       ena,        
     input  wire       clk,        
@@ -562,6 +556,12 @@ module adsr_generator (
     localparam STATE_SUSTAIN = 4'b0011;
     localparam STATE_RELEASE = 4'b0100;
 
+    // Suppress unused signal warnings
+    // verilator lint_off UNUSEDSIGNAL
+    wire unused_decay = |decay[3:0];
+    wire unused_rel   = |rel[3:0];
+    // verilator lint_on UNUSEDSIGNAL
+
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             state          <= STATE_IDLE;
@@ -580,7 +580,7 @@ module adsr_generator (
                 STATE_ATTACK: begin
                     counter <= 8'd0;
                     if (adsr_amplitude < 8'd255)
-                        adsr_amplitude <= adsr_amplitude + (attack >> 4);
+                        adsr_amplitude <= adsr_amplitude + (attack >> 3); // Faster attack
                     else begin
                         adsr_amplitude <= 8'd255;
                         state <= STATE_DECAY;
@@ -588,16 +588,17 @@ module adsr_generator (
                 end
                 STATE_DECAY: begin
                     if (adsr_amplitude > sustain) begin
-                        adsr_amplitude <= adsr_amplitude - ((adsr_amplitude - sustain) >> (decay[7:4] + 1));
+                        adsr_amplitude <= adsr_amplitude - ((adsr_amplitude - sustain) >> (decay[7:4] > 0 ? decay[7:4] : 1)); // Ensure decay is not too fast
                         if (adsr_amplitude < sustain) adsr_amplitude <= sustain; 
                     end else begin
                         adsr_amplitude <= sustain;
                         state <= STATE_SUSTAIN;
+                        counter <= 0; // Reset counter to use as a timer
                     end
                 end
                 STATE_SUSTAIN: begin
                     adsr_amplitude <= sustain;
-                    if (counter == 8'd255) begin
+                    if (counter == 8'd255) begin  // Using counter as a placeholder for key release
                         state   <= STATE_RELEASE;
                         counter <= 8'd0;
                     end else begin
@@ -606,15 +607,15 @@ module adsr_generator (
                 end
                 STATE_RELEASE: begin
                     if (adsr_amplitude > 8'd0) begin
-                        adsr_amplitude <= adsr_amplitude - (adsr_amplitude >> (rel[7:4] + 1));
-                        if (adsr_amplitude > 8'd0 && adsr_amplitude < (adsr_amplitude >> (rel[7:4] + 1))) 
+                        adsr_amplitude <= adsr_amplitude - (adsr_amplitude >> (rel[7:4] + 2)); // Smoother release
+                        if (adsr_amplitude > 8'd0 && adsr_amplitude < (adsr_amplitude >> (rel[7:4] + 2))) 
                             adsr_amplitude <= 8'd0;
                     end else begin
                         adsr_amplitude <= 8'd0;
                         state <= STATE_IDLE;
                     end
                 end
-                default: state <= STATE_IDLE; // Fixed: Added default case
+                default: state <= STATE_IDLE; // Ensuring reset to idle in unexpected cases
             endcase
         end
     end
@@ -627,11 +628,14 @@ endmodule
 
 
 
+
 module square_wave_generator (
     input  wire       ena,         // Enable signal
     input  wire       clk,         // Clock signal
     input  wire       rst_n,       // Active-low reset signal
-    input  wire [7:0] phase,       // 8-bit phase input
+    // verilator lint_off UNUSED
+    input  wire [7:0] phase, 
+    // verilator lint_on UNUSED
     output reg  [7:0] wave_out     // 8-bit output wave
 );  
 
