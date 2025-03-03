@@ -1,8 +1,6 @@
 `default_nettype none
 `timescale 1ns / 1ps
 
-/* Testbench for tt_um_waves */
-
 module tb;
 
   initial begin
@@ -26,6 +24,11 @@ module tb;
   wire i2s_ws  = uo_out[1];
   wire i2s_sd  = uo_out[2];
 
+  wire [7:0] selected_wave_dbg;
+  wire [7:0] adsr_amplitude_dbg;
+  wire [2:0] wave_select_dbg;
+  wire [5:0] freq_select_dbg;
+
   tt_um_waves dut (
       .ui_in  (ui_in),
       .uo_out (uo_out),
@@ -34,7 +37,11 @@ module tb;
       .uio_oe (uio_oe),
       .ena    (ena),
       .clk    (clk),
-      .rst_n  (rst_n)
+      .rst_n  (rst_n),
+      .selected_wave_dbg(selected_wave_dbg),
+      .adsr_amplitude_dbg(adsr_amplitude_dbg),
+      .wave_select_dbg(wave_select_dbg),
+      .freq_select_dbg(freq_select_dbg)
   );
 
   // Reset and enable
@@ -50,7 +57,7 @@ module tb;
     integer i;
     begin
       ui_in[0] <= 0;  // Start bit
-      @(posedge clk); #8680;  // Simulating 115200 baud (1/115200 ≈ 8680ns)
+      @(posedge clk); #8680;  // Simulating 115200 baud
 
       for (i = 0; i < 8; i = i + 1) begin
         ui_in[0] <= data[i];
@@ -65,27 +72,20 @@ module tb;
   // Debug I2S Output
   always @(posedge clk) begin
     $display("I2S Debug: SCK=%b, WS=%b, SD=%b | Waveform=%h | ADSR=%h", 
-             i2s_sck, i2s_ws, i2s_sd, tb.dut.selected_wave, tb.dut.adsr_amplitude);
+             i2s_sck, i2s_ws, i2s_sd, selected_wave_dbg, adsr_amplitude_dbg);
   end
 
-  // Force Initial Waveform Selection
+  // Initial Waveform Selection via UART
   initial begin
     #200;
-
     uart_send(8'h54);  // 'T' for Triangle wave
     #1000;
     $display("Triangle wave test completed");
-
-    // FORCE wave selection and ADSR parameters
-    force tb.dut.wave_select = 3'b011;  // Select sine wave
-    force tb.dut.freq_select = 6'b100001;  // Set frequency (A4)
-    force tb.dut.adsr_amplitude = 8'hFF;  // Max amplitude
+    
+    uart_send(8'h57);  // 'W' for Sine wave
+    uart_send(8'h41);  // Frequency A4 (440 Hz)
+    
     #5000;
-
-    release tb.dut.wave_select;
-    release tb.dut.freq_select;
-    release tb.dut.adsr_amplitude;
-
     $finish;
   end
 
@@ -93,20 +93,9 @@ module tb;
   initial begin
     #1000;
     $display("Testing ADSR...");
-
-    // Set attack, decay, sustain, release to nonzero values
-    force tb.dut.attack = 8'd50;
-    force tb.dut.decay = 8'd30;
-    force tb.dut.sustain = 8'd128;
-    force tb.dut.rel = 8'd40;
-
+    uio_in = 8'b11000000; // Simulated encoder values
     #5000;
-    release tb.dut.attack;
-    release tb.dut.decay;
-    release tb.dut.sustain;
-    release tb.dut.rel;
-
-    $display("ADSR Forced Settings Complete.");
+    $display("ADSR Test Complete.");
   end
 
 endmodule

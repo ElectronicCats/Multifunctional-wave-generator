@@ -234,118 +234,93 @@ module uart_receiver (
     output reg white_noise_en     // White Noise enable
 );
     
-    // Parameters
-    parameter BAUD_TICKS = 2604;  // Baud rate clock ticks 
+    parameter CLK_FREQ = 50_000_000;  // 50 MHz clock
+    parameter BAUD_RATE = 19200;
+    parameter BAUD_TICKS = CLK_FREQ / BAUD_RATE;
     
-    // Registers and Wires
-    reg [31:0] baud_counter;      // Baud rate clock counter
-    reg [7:0] received_byte;      // Received byte buffer
-    reg [2:0] bit_count;          // Bit counter (0-7 for 8 bits)
-    reg receiving;                // UART receiving flag
-    reg [1:0] state;              // State machine: 0 = idle, 1 = receiving, 2 = processing
+    reg [31:0] baud_counter;
+    reg [7:0] received_byte;
+    reg [2:0] bit_count;
+    reg receiving;
+    reg [1:0] state;
+    reg data_ready;
 
-    reg [7:0] phase_accum_reg;    // Phase accumulator register
-   
-    // State machine states (Optimized to 2 bits)
     localparam IDLE       = 2'b00;
     localparam RECEIVING  = 2'b01;
     localparam PROCESSING = 2'b10;
 
-    // Synchronize the RX signal to avoid metastability
-    reg rx_sync1, rx_sync2;
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            rx_sync1 <= 1'b1;
-            rx_sync2 <= 1'b1;
-        end else begin
-            rx_sync1 <= rx;
-            rx_sync2 <= rx_sync1;
-        end
+    // Synchronize RX input
+    reg [1:0] rx_sync;
+    always @(posedge clk) begin
+        rx_sync <= {rx_sync[0], rx}; 
+    end
+    reg rx_stable;
+    always @(posedge clk) begin
+        rx_stable <= rx_sync[1];
     end
 
-    wire rx_stable = rx_sync2;
+    wire start_bit = (rx_sync[1] == 1'b1 && rx_sync[0] == 1'b0);
 
-    // Start bit detection (falling edge on rx_stable)
-    reg rx_last;
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n)
-            rx_last <= 1'b1;
-        else
-            rx_last <= rx_stable;
-    end
-    wire start_bit = (rx_last == 1'b1 && rx_stable == 1'b0); // Falling edge detection
-
-    // Main state machine
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            // Reset all registers
             received_byte <= 8'd0;
             bit_count <= 3'd0;
             receiving <= 1'b0;
             freq_select <= 6'd0;
-            wave_select <= 3'b000;  // Default: Triangle wave
-            white_noise_en <= 1'b0; // Disable white noise
+            wave_select <= 3'b000;
+            white_noise_en <= 1'b0;
             state <= IDLE;
-            baud_counter <= 0;     // Reset baud counter
-            phase_accum_reg <= 8'd0;
+            baud_counter <= 0;
+            data_ready <= 0;
         end else begin
             case (state)
                 IDLE: begin
                     if (start_bit) begin
                         receiving <= 1'b1;
                         bit_count <= 0;
-                        baud_counter <= 0; // Reset baud counter
+                        baud_counter <= 0;
                         state <= RECEIVING;
                     end
                 end
-
                 RECEIVING: begin
-                    if (receiving) begin
-                        if (baud_counter == BAUD_TICKS - 1) begin
-                            baud_counter <= 0; // Reset baud counter for the next bit
-                            received_byte[bit_count] <= rx_stable; // Store current bit
-                            if (bit_count < 3'd7) begin
-                                bit_count <= bit_count + 1;
-                            end else begin
-                                receiving <= 1'b0; // All bits received
-                                state <= PROCESSING; // Go to processing state
-                            end
+                    if (baud_counter == (BAUD_TICKS >> 1)) begin
+                        received_byte[bit_count] <= rx_stable;
+                    end
+                    if (baud_counter == BAUD_TICKS - 1) begin
+                        baud_counter <= 0;
+                        if (bit_count < 3'd7) begin
+                            bit_count <= bit_count + 1;
                         end else begin
-                            baud_counter <= baud_counter + 1; // Increment baud counter
+                            receiving <= 1'b0;
+                            state <= PROCESSING;
                         end
+                    end else begin
+                        baud_counter <= baud_counter + 1;
                     end
                 end
-
                 PROCESSING: begin
-                    // Process the received byte
-                    case (received_byte)
-                        // White noise control
-                        8'h4E: white_noise_en <= 1'b1;        // 'N' - Enable white noise
-                        8'h46: white_noise_en <= 1'b0;        // 'F' - Disable white noise
+                    if (!data_ready) begin
+                        case (received_byte)
+                            8'h4E: white_noise_en <= 1'b1;
+                            8'h46: white_noise_en <= 1'b0;
+                            8'h54: wave_select <= 3'b000;
+                            8'h53: wave_select <= 3'b001;
+                            8'h51: wave_select <= 3'b010;
+                            8'h57: wave_select <= 3'b011;
+                            default: begin
+                                // Ensure freq_select is 6 bits
+                                // First, calculate the 10-bit result
+                                reg [9:0] temp;
+                                temp = ({2'b00, received_byte} - 10'd65 + 10'd10) & 10'h3FF; // Calculate 10-bit value
 
-                        // Wave selection
-                        8'h54: wave_select <= 3'b000;         // 'T' - Triangle wave
-                        8'h53: wave_select <= 3'b001;         // 'S' - Sawtooth wave
-                        8'h51: wave_select <= 3'b010;         // 'Q' - Square wave
-                        8'h57: wave_select <= 3'b011;         // 'W' - Sine wave
-
-                        // Frequency selection (numbers '0'-'9' and letters 'A'-'Z')
-                        default: begin
-                            if (received_byte >= 8'h30 && received_byte <= 8'h39) begin
-                                freq_select <= received_byte[5:0] - 6'h30; // Convert '0'-'9' to value
-                            end else if (received_byte >= 8'h41 && received_byte <= 8'h5A) begin
-                                freq_select <= {1'b0, received_byte[5:0]} - 7'd65 + 6'd10; // Convert 'A'-'Z' to value
+                                // Now assign only the lower 6 bits to freq_select
+                                freq_select <= temp[5:0]; // Truncate to 6 bits
                             end
-                        end
-                    endcase
-                    
-                    // **Phase Accumulator Update**
-                    phase_accum_reg <= phase_accum_reg + {2'b00, freq_select}; 
-
-                    // Go back to IDLE after processing
+                        endcase
+                        data_ready <= 1'b1;
+                    end
                     state <= IDLE;
                 end
-
                 default: state <= IDLE;
             endcase
         end
@@ -557,10 +532,10 @@ module adsr_generator (
     localparam STATE_RELEASE = 4'b0100;
 
     // Suppress unused signal warnings
-    // verilator lint_off UNUSEDSIGNAL
+   
     wire unused_decay = |decay[3:0];
     wire unused_rel   = |rel[3:0];
-    // verilator lint_on UNUSEDSIGNAL
+   
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
