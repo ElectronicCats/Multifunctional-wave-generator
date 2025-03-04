@@ -142,6 +142,9 @@ module tt_um_waves (
         .white_noise_en(white_noise_en)
     );
 
+    $display("Frequency Select: %b, Waveform Select: %b", freq_select, wave_select);
+
+
     // Encoders for ADSR
     encoder attack_encoder (.clk(clk), .rst_n(rst_n), .a(uio_in[0]), .b(uio_in[1]), .value(attack), .ena(ena));
     encoder decay_encoder (.clk(clk), .rst_n(rst_n), .a(uio_in[2]), .b(uio_in[3]), .value(decay), .ena(ena));
@@ -190,6 +193,7 @@ module tt_um_waves (
     // Apply ADSR Envelope to waveform (Added saturation logic)
     reg [7:0] scaled_wave;
     always @(posedge clk or negedge rst_n) begin
+        $display("Selected Waveform: %h, ADSR Amplitude: %h, Scaled Wave: %h", selected_wave, adsr_amplitude, scaled_wave);
         if (!rst_n) begin
             temp_wave   <= 16'd0;
             scaled_wave <= 8'd0;
@@ -405,6 +409,7 @@ module i2s_transmitter (
     parameter SCK_DIV = 16; // Adjust this based on your clock frequency
 
     always @(posedge clk or negedge rst_n) begin
+        $display("I2S Output Debug: SCK=%b, WS=%b, SD=%b", sck, ws, sd);
         if (!rst_n) begin
             clk_div    <= 0;
             sck        <= 0;
