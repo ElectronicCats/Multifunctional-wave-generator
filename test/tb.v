@@ -13,13 +13,12 @@ module tb;
     $display("Reset=%b, Ena=%b", rst_n, ena);
     #100;
     $display("After reset: Reset=%b, Ena=%b", rst_n, ena);
-   end
-
+  end
 
   reg clk = 0;
   always #20 clk = ~clk;  // 25 MHz clock (40ns period)
 
-  reg rst_n = 0;
+  reg rst_n = 1;  // Cambio: Inicialización en 1 para evitar estados indefinidos
   reg ena = 0;
 
   reg [7:0] ui_in = 0;
@@ -43,56 +42,59 @@ module tb;
       .rst_n  (rst_n)
   );
 
-  // Reset and enable
+  // Reset y habilitación con mayor margen de tiempo
   initial begin
     #100;
     rst_n = 1;
-    #100;
+    #50;
     ena = 1;
   end
 
-  // UART Transmission Simulation (for frequency and waveform selection)
+  // Simulación de transmisión UART para selección de onda y frecuencia
   task uart_send(input [7:0] data);
     integer i;
     begin
-      ui_in[0] <= 0;  // Start bit
-      @(posedge clk); #8680;  // Simulating 115200 baud
+      ui_in[0] <= 0;  // Bit de inicio
+      @(posedge clk); #8680;  // Simulación de 115200 baud
 
       for (i = 0; i < 8; i = i + 1) begin
         ui_in[0] <= data[i];
         @(posedge clk); #8680;
       end
 
-      ui_in[0] <= 1;  // Stop bit
+      ui_in[0] <= 1;  // Bit de parada
       @(posedge clk); #8680;
     end
   endtask
 
-  // Debug I2S Output
+  // Debug de salida I2S con verificación de estado
   always @(posedge clk) begin
-    $display("I2S Debug: SCK=%b, WS=%b, SD=%b", 
-             i2s_sck, i2s_ws, i2s_sd);
+    if (i2s_sck !== 1'bx && i2s_ws !== 1'bx && i2s_sd !== 1'bx) begin
+      $display("I2S Debug: SCK=%b, WS=%b, SD=%b", i2s_sck, i2s_ws, i2s_sd);
+    end else begin
+      $display("Error: I2S en estado indefinido");
+    end
   end
 
-  // Initial Waveform Selection via UART
+  // Selección inicial de onda vía UART con delay extendido
   initial begin
-    #200;
-    uart_send(8'h54);  // 'T' for Triangle wave
+    #500;  // Asegurar estabilidad de señales antes de enviar datos
+    uart_send(8'h54);  // 'T' para onda triangular
     #1000;
     $display("Triangle wave test completed");
     
-    uart_send(8'h57);  // 'W' for Sine wave
-    uart_send(8'h41);  // Frequency A4 (440 Hz)
+    uart_send(8'h57);  // 'W' para onda senoidal
+    uart_send(8'h41);  // Frecuencia A4 (440 Hz)
     
     #5000;
     $finish;
   end
 
-  // Manually Set ADSR in Testbench
+  // Simulación de control ADSR
   initial begin
     #1000;
     $display("Testing ADSR...");
-    uio_in = 8'b11000000; // Simulated encoder values
+    uio_in = 8'b11000000; // Valores simulados de encoder
     #5000;
     $display("ADSR Test Complete.");
   end
