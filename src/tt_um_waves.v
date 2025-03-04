@@ -34,6 +34,7 @@ module tt_um_waves (
     reg [7:0] phase_accum;
 
     always @(posedge clk or negedge rst_n) begin
+        $display("Wave clock toggled: %b, clk_div: %d, freq_divider: %d", wave_clk, clk_div, freq_divider);
         if (!rst_n) begin
             freq_divider <= 21'd284091;  // Default to A4 frequency
         end else begin
@@ -341,6 +342,10 @@ module uart_receiver (
                                 freq_select <= temp_freq[5:0]; // Explicit truncation to 6 bits
                             end
                         end
+
+                        $display("UART received: %h", received_byte);
+                        $display("Updated freq_select: %b, wave_select: %b, white_noise_en: %b", freq_select, wave_select, white_noise_en);
+
                     endcase
                     
                     // **Phase Accumulator Update**

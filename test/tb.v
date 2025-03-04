@@ -8,6 +8,14 @@ module tb;
     $dumpvars(0, tb);
   end
 
+  initial begin
+    #50;
+    $display("Reset=%b, Ena=%b", rst_n, ena);
+    #100;
+    $display("After reset: Reset=%b, Ena=%b", rst_n, ena);
+   end
+
+
   reg clk = 0;
   always #20 clk = ~clk;  // 25 MHz clock (40ns period)
 
