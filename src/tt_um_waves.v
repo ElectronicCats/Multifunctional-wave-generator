@@ -347,9 +347,6 @@ module uart_receiver (
                             end
                         end
 
-                        $display("UART received: %h", received_byte);
-                        $display("Updated freq_select: %b, wave_select: %b, white_noise_en: %b", freq_select, wave_select, white_noise_en);
-
                     endcase
                     
                     // **Phase Accumulator Update**
