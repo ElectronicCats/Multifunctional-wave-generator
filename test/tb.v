@@ -24,11 +24,6 @@ module tb;
   wire i2s_ws  = uo_out[1];
   wire i2s_sd  = uo_out[2];
 
-  wire [7:0] selected_wave_dbg;
-  wire [7:0] adsr_amplitude_dbg;
-  wire [2:0] wave_select_dbg;
-  wire [5:0] freq_select_dbg;
-
   tt_um_waves dut (
       .ui_in  (ui_in),
       .uo_out (uo_out),
@@ -37,11 +32,7 @@ module tb;
       .uio_oe (uio_oe),
       .ena    (ena),
       .clk    (clk),
-      .rst_n  (rst_n),
-      .selected_wave_dbg(selected_wave_dbg),
-      .adsr_amplitude_dbg(adsr_amplitude_dbg),
-      .wave_select_dbg(wave_select_dbg),
-      .freq_select_dbg(freq_select_dbg)
+      .rst_n  (rst_n)
   );
 
   // Reset and enable
@@ -71,8 +62,8 @@ module tb;
 
   // Debug I2S Output
   always @(posedge clk) begin
-    $display("I2S Debug: SCK=%b, WS=%b, SD=%b | Waveform=%h | ADSR=%h", 
-             i2s_sck, i2s_ws, i2s_sd, selected_wave_dbg, adsr_amplitude_dbg);
+    $display("I2S Debug: SCK=%b, WS=%b, SD=%b", 
+             i2s_sck, i2s_ws, i2s_sd);
   end
 
   // Initial Waveform Selection via UART
