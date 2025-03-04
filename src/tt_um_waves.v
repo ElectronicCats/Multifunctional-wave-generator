@@ -142,7 +142,7 @@ module tt_um_waves (
         .white_noise_en(white_noise_en)
     );
 
-    $display("Frequency Select: %b, Waveform Select: %b", freq_select, wave_select);
+    
 
 
     // Encoders for ADSR
