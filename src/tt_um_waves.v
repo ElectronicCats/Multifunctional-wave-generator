@@ -252,57 +252,43 @@ module uart_receiver (
     reg [7:0] phase_accum_reg;    // Phase accumulator register
 
     // Temporary variable for frequency conversion
-    reg [7:0] temp_freq;  // Changed from wire to reg for usage in procedural block
+    reg [7:0] temp_freq;  // Remains 8 bits, but ensures all bits are used
 
-    // State machine states (Optimized to 2 bits)
+    // State machine states
     localparam IDLE       = 2'b00;
     localparam RECEIVING  = 2'b01;
     localparam PROCESSING = 2'b10;
 
-    // Synchronize the RX signal to avoid metastability
-    reg rx_sync1, rx_sync2;
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            rx_sync1 <= 1'b1;
-            rx_sync2 <= 1'b1;
-        end else begin
-            rx_sync1 <= rx;
-            rx_sync2 <= rx_sync1;
-        end
-    end
-
-    wire rx_stable = rx_sync2;
-
-    // Start bit detection (falling edge on rx_stable)
+    // Start bit detection (falling edge on rx)
     reg rx_last;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
             rx_last <= 1'b1;
         else
-            rx_last <= rx_stable;
+            rx_last <= rx;
     end
-    wire start_bit = (rx_last == 1'b1 && rx_stable == 1'b0); // Falling edge detection
+    wire start_bit = (rx_last == 1'b1 && rx == 1'b0);
 
     // Main state machine
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            // Reset all registers
             received_byte <= 8'd0;
             bit_count <= 3'd0;
             receiving <= 1'b0;
             freq_select <= 6'd0;
-            wave_select <= 3'b000;  // Default: Triangle wave
-            white_noise_en <= 1'b0; // Disable white noise
+            wave_select <= 3'b000;
+            white_noise_en <= 1'b0;
             state <= IDLE;
-            baud_counter <= 0;     // Reset baud counter
+            baud_counter <= 0;
             phase_accum_reg <= 8'd0;
+            temp_freq <= 8'd0;
         end else begin
             case (state)
                 IDLE: begin
                     if (start_bit) begin
                         receiving <= 1'b1;
                         bit_count <= 0;
-                        baud_counter <= 0; // Reset baud counter
+                        baud_counter <= 0;
                         state <= RECEIVING;
                     end
                 end
@@ -310,49 +296,39 @@ module uart_receiver (
                 RECEIVING: begin
                     if (receiving) begin
                         if (baud_counter == BAUD_TICKS - 1) begin
-                            baud_counter <= 0; // Reset baud counter for the next bit
-                            received_byte[bit_count] <= rx_stable; // Store current bit (non-blocking)
+                            baud_counter <= 0;
+                            received_byte[bit_count] <= rx;
                             if (bit_count < 3'd7) begin
                                 bit_count <= bit_count + 1;
                             end else begin
-                                receiving <= 1'b0; // All bits received
-                                state <= PROCESSING; // Go to processing state
+                                receiving <= 1'b0;
+                                state <= PROCESSING;
                             end
                         end else begin
-                            baud_counter <= baud_counter + 1; // Increment baud counter
+                            baud_counter <= baud_counter + 1;
                         end
                     end
                 end
 
                 PROCESSING: begin
-                    // Process the received byte
                     case (received_byte)
-                        // White noise control
-                        8'h4E: white_noise_en <= 1'b1;        // 'N' - Enable white noise
-                        8'h46: white_noise_en <= 1'b0;        // 'F' - Disable white noise
-
-                        // Wave selection
-                        8'h54: wave_select <= 3'b000;         // 'T' - Triangle wave
-                        8'h53: wave_select <= 3'b001;         // 'S' - Sawtooth wave
-                        8'h51: wave_select <= 3'b010;         // 'Q' - Square wave
-                        8'h57: wave_select <= 3'b011;         // 'W' - Sine wave
-
-                        // Frequency selection (numbers '0'-'9' and letters 'A'-'Z')
+                        8'h4E: white_noise_en <= 1'b1;
+                        8'h46: white_noise_en <= 1'b0;
+                        8'h54: wave_select <= 3'b000;
+                        8'h53: wave_select <= 3'b001;
+                        8'h51: wave_select <= 3'b010;
+                        8'h57: wave_select <= 3'b011;
                         default: begin
                             if (received_byte >= 8'h30 && received_byte <= 8'h39) begin
-                                freq_select <= received_byte[5:0] - 6'h30; // Convert '0'-'9' to value
+                                freq_select <= received_byte[5:0] - 6'h30;
                             end else if (received_byte >= 8'h41 && received_byte <= 8'h5A) begin
-                                temp_freq <= (received_byte - 8'd65 + 8'd10) & 8'h3F;  // Convert 'A'-'Z' to value
-                                freq_select <= temp_freq[5:0]; // Explicit truncation to 6 bits
+                                temp_freq <= (received_byte - 8'd65 + 8'd10) & 8'h3F;
+                                temp_freq[7:6] <= 2'b00; // Assign 0 to unused bits
+                                freq_select <= temp_freq[5:0];
                             end
                         end
-
                     endcase
-                    
-                    // **Phase Accumulator Update**
-                    phase_accum_reg <= phase_accum_reg + {2'b00, freq_select}; 
-
-                    // Go back to IDLE after processing
+                    phase_accum_reg <= phase_accum_reg + {2'b00, freq_select};
                     state <= IDLE;
                 end
 
@@ -360,10 +336,7 @@ module uart_receiver (
             endcase
         end
     end
-
 endmodule
-
-
 
 
 
