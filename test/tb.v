@@ -18,8 +18,8 @@ module tb;
   reg clk = 0;
   always #20 clk = ~clk;  // 25 MHz clock (40ns period)
 
-  reg rst_n = 1;  // Cambio: Inicialización en 1 para evitar estados indefinidos
-  reg ena = 0;
+  reg rst_n;
+  reg ena;
 
   reg [7:0] ui_in = 0;
   reg [7:0] uio_in = 0;
@@ -42,59 +42,69 @@ module tb;
       .rst_n  (rst_n)
   );
 
-  // Reset y habilitación con mayor margen de tiempo
+  // Improved reset and enable handling
   initial begin
-    #100;
-    rst_n = 1;
+    rst_n = 0;  // Ensure reset is asserted at the start
+    ena = 0;    // Disable enable at the beginning
     #50;
-    ena = 1;
+    rst_n = 1;  // Release reset
+    ena = 1;    // Enable the system immediately after reset
+    $display("Reset applied: Reset=%b, Ena=%b", rst_n, ena);
   end
 
-  // Simulación de transmisión UART para selección de onda y frecuencia
+  // Ensure Ena is set whenever Reset is active
+  always @(posedge clk) begin
+    if (!rst_n) begin
+      $display("Reset detected: Forcing Ena to 1");
+      ena <= 1;
+    end
+  end
+
+  // UART transmission simulation for waveform and frequency selection
   task uart_send(input [7:0] data);
     integer i;
     begin
-      ui_in[0] <= 0;  // Bit de inicio
-      @(posedge clk); #8680;  // Simulación de 115200 baud
+      ui_in[0] <= 0;  // Start bit
+      @(posedge clk); #8680;  // Simulating 115200 baud
 
       for (i = 0; i < 8; i = i + 1) begin
         ui_in[0] <= data[i];
         @(posedge clk); #8680;
       end
 
-      ui_in[0] <= 1;  // Bit de parada
+      ui_in[0] <= 1;  // Stop bit
       @(posedge clk); #8680;
     end
   endtask
 
-  // Debug de salida I2S con verificación de estado
+  // Debugging for I2S output
   always @(posedge clk) begin
     if (i2s_sck !== 1'bx && i2s_ws !== 1'bx && i2s_sd !== 1'bx) begin
       $display("I2S Debug: SCK=%b, WS=%b, SD=%b", i2s_sck, i2s_ws, i2s_sd);
     end else begin
-      $display("Error: I2S en estado indefinido");
+      $display("Error: I2S in an undefined state");
     end
   end
 
-  // Selección inicial de onda vía UART con delay extendido
+  // Initial waveform selection via UART with extended delay
   initial begin
-    #500;  // Asegurar estabilidad de señales antes de enviar datos
-    uart_send(8'h54);  // 'T' para onda triangular
+    #500;  // Ensure signal stability before sending data
+    uart_send(8'h54);  // 'T' for triangular wave
     #1000;
     $display("Triangle wave test completed");
     
-    uart_send(8'h57);  // 'W' para onda senoidal
-    uart_send(8'h41);  // Frecuencia A4 (440 Hz)
+    uart_send(8'h57);  // 'W' for sine wave
+    uart_send(8'h41);  // Frequency A4 (440 Hz)
     
     #5000;
     $finish;
   end
 
-  // Simulación de control ADSR
+  // ADSR control simulation
   initial begin
     #1000;
     $display("Testing ADSR...");
-    uio_in = 8'b11000000; // Valores simulados de encoder
+    uio_in = 8'b11000000; // Simulated encoder values
     #5000;
     $display("ADSR Test Complete.");
   end
