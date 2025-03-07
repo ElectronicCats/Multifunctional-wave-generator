@@ -168,13 +168,15 @@ module tt_um_waves (
             case (wave_select)
                 3'b000: selected_wave <= tri_wave_out;
                 3'b001: selected_wave <= saw_wave_out;
-                3'b010: selected_wave <= sqr_wave_out;
-                3'b011: selected_wave <= sine_wave_out;
-                3'b100: selected_wave <= noise_out;
-                default: selected_wave <= tri_wave_out;
+            	3'b010: selected_wave <= sqr_wave_out;
+            	3'b011: selected_wave <= sine_wave_out;
+            	3'b100: selected_wave <= noise_out;
+            	default: selected_wave <= tri_wave_out;
             endcase
+            $display("Wave selected: %b, Output: %d", wave_select, selected_wave); // Debug message
         end
     end
+
 
 
     // ADSR generator
@@ -196,14 +198,15 @@ module tt_um_waves (
             temp_wave   <= 16'd0;
             scaled_wave <= 8'd0;
         end else begin
-           temp_wave <= (selected_wave * adsr_amplitude) >> 8;
+             temp_wave <= (selected_wave * adsr_amplitude) >> 8;
 
-            if (adsr_amplitude > 8'd10) 
-                scaled_wave <= temp_wave[15:8];
-            else
-                scaled_wave <= 8'd2; // Smallest nonzero value
+        if (adsr_amplitude > 8'd10) 
+            scaled_wave <= (temp_wave[15:8] > 8'd2) ? temp_wave[15:8] : 8'd3; // Ensure a higher minimum value
+        else
+            scaled_wave <= 8'd3; // Avoid too small values
         end
     end
+
   
       wire i2s_sck, i2s_ws, i2s_sd;
     i2s_transmitter i2s_out (
@@ -500,11 +503,14 @@ module triangular_wave_generator (
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
-            wave_out <= 8'd0;
-        else if (ena)
+            wave_out <= 8'd128; // Ensure valid waveform
+        else if (ena) begin
             wave_out <= phase[7] ? (8'd255 - {1'b0, phase[6:0]} << 1) : ({1'b0, phase[6:0]} << 1);
+            $display("Triangular Wave: Phase = %d, Output = %d", phase, wave_out);
+        end
     end
 endmodule
+
 
 
 
@@ -522,6 +528,7 @@ module sawtooth_wave_generator (
             wave_out <= 8'd0;
         else if (ena)
             wave_out <= phase; // Directly use phase as sawtooth wave
+      $display("Sawtooth Wave: Phase = %d, Output = %d", phase, wave_out);
     end
 endmodule
 
@@ -550,70 +557,73 @@ module adsr_generator (
     localparam STATE_SUSTAIN = 4'b0011;
     localparam STATE_RELEASE = 4'b0100;
 
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            state          <= STATE_IDLE;
-            amplitude      <= 8'd0;
-            counter        <= 8'd0;
-        end else if (ena) begin
-            case (state)
-                STATE_IDLE: begin
-                    if (counter == 8'd255) begin
-                        state   <= STATE_ATTACK;
-                        counter <= 8'd0;
-                    end else begin
-                        counter <= counter + 1;
-                    end
-                end
-
-                STATE_ATTACK: begin
+   always @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+        state     <= STATE_IDLE;
+        amplitude <= 8'd0;
+        counter   <= 8'd0;
+    end else if (ena) begin
+        case (state)
+            STATE_IDLE: begin
+                if (counter == 8'd255) begin
+                    state   <= STATE_ATTACK;
                     counter <= 8'd0;
-                    if (amplitude < 8'd255)
-                        amplitude <= amplitude + (attack >> 3);
-                    else begin
-                        amplitude <= 8'd255;
-                        state <= STATE_DECAY;
-                    end
+                end else begin
+                    counter <= counter + 1;
                 end
+            end
 
-                STATE_DECAY: begin
-                    if (amplitude > sustain) begin
-                        amplitude <= amplitude - ((amplitude - sustain) >> decay[7:4]);
-                        if (amplitude < sustain) 
-                            amplitude <= sustain;
-                    end else begin
+            STATE_ATTACK: begin
+                counter <= 8'd0;
+                if (amplitude < 8'd255)
+                    amplitude <= amplitude + (attack >> 3);
+                else begin
+                    amplitude <= 8'd255;
+                    state <= STATE_DECAY;
+                end
+            end
+
+            STATE_DECAY: begin
+                if (amplitude > sustain) begin
+                    amplitude <= amplitude - ((amplitude - sustain) >> (decay[6:3] + 1)); // More precision in decay
+                    if (amplitude < sustain) 
                         amplitude <= sustain;
-                        state <= STATE_SUSTAIN;
-                        counter <= 8'd0;
-                    end
-                end
-
-                STATE_SUSTAIN: begin
+                end else begin
                     amplitude <= sustain;
-                    if (counter == 8'd255) begin  
-                        state   <= STATE_RELEASE;
-                        counter <= 8'd0;
-                    end else begin
-                        counter <= counter + 1;
-                    end
+                    state <= STATE_SUSTAIN;
+                    counter <= 8'd0;
                 end
+            end
 
-                STATE_RELEASE: begin
-                    if (amplitude > 8'd0) begin
-                        amplitude <= amplitude - (amplitude >> (rel[7:4] + 1));
-                        if (amplitude > 8'd0 && amplitude < (amplitude >> (rel[7:4] + 1))) 
-                            amplitude <= 8'd0;
-                    end else begin
-                        amplitude <= 8'd0;
+            STATE_SUSTAIN: begin
+                amplitude <= sustain;
+                if (counter == 8'd255) begin  
+                    state   <= STATE_RELEASE;
+                    counter <= 8'd0;
+                end else begin
+                    counter <= counter + 1;
+                end
+            end
+
+            STATE_RELEASE: begin
+                if (amplitude > 8'd0) begin
+                    amplitude <= amplitude - (amplitude >> (rel[6:3] + 2)); // Adjust release curve
+                    if (amplitude == 8'd0) 
                         state <= STATE_IDLE;
-                    end
                 end
+            end
 
-                default: state <= STATE_IDLE;
-            endcase
-        end
+            default: begin
+                state <= STATE_IDLE; // Reset to a known state
+                amplitude <= 8'd0;
+                counter <= 8'd0;
+            end
+        endcase
     end
+end
+
 endmodule
+
 
 
 
