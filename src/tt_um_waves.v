@@ -503,7 +503,7 @@ module triangular_wave_generator (
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
-            wave_out <= 8'd128; // Ensure valid waveform
+            wave_out <= 8'd0; // Ensure valid waveform
         else if (ena) begin
             wave_out <= phase[7] ? (8'd255 - {1'b0, phase[6:0]} << 1) : ({1'b0, phase[6:0]} << 1);
             $display("Triangular Wave: Phase = %d, Output = %d", phase, wave_out);
@@ -557,74 +557,72 @@ module adsr_generator (
     localparam STATE_SUSTAIN = 4'b0011;
     localparam STATE_RELEASE = 4'b0100;
 
-   always @(posedge clk or negedge rst_n) begin
-    if (!rst_n) begin
-        state     <= STATE_IDLE;
-        amplitude <= 8'd0;
-        counter   <= 8'd0;
-    end else if (ena) begin
-        case (state)
-            STATE_IDLE: begin
-                if (counter == 8'd255) begin
-                    state   <= STATE_ATTACK;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            state     <= STATE_IDLE;
+            amplitude <= 8'd0;
+            counter   <= 8'd0;
+        end else if (ena) begin
+            case (state)
+                STATE_IDLE: begin
+                    if (counter == 8'd255) begin
+                        state   <= STATE_ATTACK;
+                        counter <= 8'd0;
+                    end else begin
+                        counter <= counter + 1;
+                    end
+                end
+
+                STATE_ATTACK: begin
                     counter <= 8'd0;
-                end else begin
-                    counter <= counter + 1;
+                    if (amplitude < 8'd255)
+                        amplitude <= amplitude + (attack >> 3);
+                    else begin
+                        amplitude <= 8'd255;
+                        state <= STATE_DECAY;
+                    end
                 end
-            end
 
-            STATE_ATTACK: begin
-                counter <= 8'd0;
-                if (amplitude < 8'd255)
-                    amplitude <= amplitude + (attack >> 3);
-                else begin
-                    amplitude <= 8'd255;
-                    state <= STATE_DECAY;
-                end
-            end
-
-            STATE_DECAY: begin
-                if (amplitude > sustain) begin
-                    amplitude <= amplitude - ((amplitude - sustain) >> (decay[6:3] + 1)); // More precision in decay
-                    if (amplitude < sustain) 
+                STATE_DECAY: begin
+                    if (amplitude > sustain) begin
+                        amplitude <= amplitude - ((amplitude - sustain) >> (decay + 1)); // Use full 8-bit decay
+                        if (amplitude < sustain) 
+                            amplitude <= sustain;
+                    end else begin
                         amplitude <= sustain;
-                end else begin
+                        state <= STATE_SUSTAIN;
+                        counter <= 8'd0;
+                    end
+                end
+
+                STATE_SUSTAIN: begin
                     amplitude <= sustain;
-                    state <= STATE_SUSTAIN;
+                    if (counter == 8'd255) begin  
+                        state   <= STATE_RELEASE;
+                        counter <= 8'd0;
+                    end else begin
+                        counter <= counter + 1;
+                    end
+                end
+
+                STATE_RELEASE: begin
+                    if (amplitude > 8'd0) begin
+                        amplitude <= amplitude - (amplitude >> (rel + 2)); // Use full 8-bit release
+                        if (amplitude == 8'd0) 
+                            state <= STATE_IDLE;
+                    end
+                end
+
+                default: begin
+                    state <= STATE_IDLE; // Reset to a known state
+                    amplitude <= 8'd0;
                     counter <= 8'd0;
                 end
-            end
-
-            STATE_SUSTAIN: begin
-                amplitude <= sustain;
-                if (counter == 8'd255) begin  
-                    state   <= STATE_RELEASE;
-                    counter <= 8'd0;
-                end else begin
-                    counter <= counter + 1;
-                end
-            end
-
-            STATE_RELEASE: begin
-                if (amplitude > 8'd0) begin
-                    amplitude <= amplitude - (amplitude >> (rel[6:3] + 2)); // Adjust release curve
-                    if (amplitude == 8'd0) 
-                        state <= STATE_IDLE;
-                end
-            end
-
-            default: begin
-                state <= STATE_IDLE; // Reset to a known state
-                amplitude <= 8'd0;
-                counter <= 8'd0;
-            end
-        endcase
+            endcase
+        end
     end
-end
 
 endmodule
-
-
 
 
 
