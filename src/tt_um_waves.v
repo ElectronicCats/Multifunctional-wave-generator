@@ -160,22 +160,23 @@ module tt_um_waves (
     cordic_sine_generator sine_gen (.clk(clk), .rst_n(rst_n), .ena(ena), .phase(phase_accum), .sine_out(sine_wave_out));
 
     // Select waveform output
+        // Select waveform output
     reg [7:0] selected_wave;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
-            selected_wave <= tri_wave_out; // Ensure valid waveform
+            selected_wave <= 8'd0; // Use a constant zero value
         else begin
             case (wave_select)
                 3'b000: selected_wave <= tri_wave_out;
                 3'b001: selected_wave <= saw_wave_out;
-            	3'b010: selected_wave <= sqr_wave_out;
-            	3'b011: selected_wave <= sine_wave_out;
-            	3'b100: selected_wave <= noise_out;
-            	default: selected_wave <= tri_wave_out;
+                3'b010: selected_wave <= sqr_wave_out;
+                3'b011: selected_wave <= sine_wave_out;
+                3'b100: selected_wave <= noise_out;
+                default: selected_wave <= 8'd0;  // Ensure default assignment
             endcase
-            $display("Wave selected: %b, Output: %d", wave_select, selected_wave); // Debug message
         end
     end
+
 
 
 
@@ -503,15 +504,15 @@ module triangular_wave_generator (
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
-            wave_out <= 8'd0; // Ensure valid waveform
+            wave_out <= 8'd0;  // 🔹 Fix: Ensure reset value is constant
         else if (ena) begin
-            wave_out <= phase[7] ? (8'd255 - {1'b0, phase[6:0]} << 1) : ({1'b0, phase[6:0]} << 1);
+            wave_out <= phase[7] ? (8'd255 - ({1'b0, phase[6:0]} << 1)) : ({1'b0, phase[6:0]} << 1);
             $display("Triangular Wave: Phase = %d, Output = %d", phase, wave_out);
+        end else begin
+            wave_out <= 8'd0; //Ensure output is always assigned
         end
     end
 endmodule
-
-
 
 
 
