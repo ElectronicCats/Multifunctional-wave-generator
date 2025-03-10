@@ -37,9 +37,9 @@ module tb;
   initial begin
     rst_n = 0;
     ena = 0;
-    #50;
+    #200;  //Hold reset longer to ensure stability
     rst_n = 1;  // Release reset
-    #10;
+    #50;
     ena = 1;    // Enable system after reset is stable
     $display("Reset applied: Reset=%b, Ena=%b", rst_n, ena);
   end
@@ -61,23 +61,20 @@ module tb;
     end
   endtask
 
-  // Debugging for I2S output
-  reg [2:0] prev_i2s;
-  always @(posedge clk) begin
-    if ({i2s_sck, i2s_ws, i2s_sd} !== prev_i2s) begin
-      $display("I2S Debug: SCK=%b, WS=%b, SD=%b", i2s_sck, i2s_ws, i2s_sd);
-      prev_i2s <= {i2s_sck, i2s_ws, i2s_sd};
-    end
+  // Debugging for I2S output (Print only on `ws` transition)
+  always @(posedge i2s_ws) begin
+    $display("I2S Frame Start: SCK=%b, WS=%b, SD=%b", i2s_sck, i2s_ws, i2s_sd);
   end
 
   // Initial waveform selection via UART
   initial begin
     #500;  
     uart_send(8'h54);  // 'T' for Triangle
-    #500;
+    #10000; // 🔹 Add delay before next command
     uart_send(8'h57);  // 'W' for Sine
+    #10000;
     uart_send(8'h41);  // Frequency A4 (440 Hz)
-    #2000;
+    #20000; // 🔹 Allow system time to process
     $display("Waveform test completed.");
   end
 
@@ -85,7 +82,7 @@ module tb;
   initial begin
     #1000;
     uio_in = 8'b11000000; // Simulated encoder values
-    #5000;
+    #10000; // 🔹 Increase time before ending simulation
     $display("ADSR Test Complete.");
     $finish;
   end
