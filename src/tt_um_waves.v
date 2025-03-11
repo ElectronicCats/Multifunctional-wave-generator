@@ -33,10 +33,11 @@ module tt_um_waves (
     // Phase accumulator for all waveforms
     reg [7:0] phase_accum;
   
-    always @(posedge clk or negedge rst_n) begin
+   always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            freq_divider <= 21'd284091;  // Default to A4 frequency
-            prev_freq_select <= 6'bxxxxxx; // Uninitialized state
+            freq_select <= 6'b001001;  // Default to A2 (110 Hz)
+            freq_divider <= 21'd1136364; 
+            prev_freq_select <= 6'bxxxxxx;
         end else if (freq_select != prev_freq_select) begin
             prev_freq_select <= freq_select;
             case (freq_select)
@@ -117,7 +118,7 @@ module tt_um_waves (
         if (!rst_n) begin
             clk_div  <= 0;
             wave_clk <= 0;
-        end else if (clk_div >= (freq_divider >> 1)) begin // Avoids instability
+        end else if (clk_div >= (freq_divider >> 1)) begin
             clk_div  <= 0;
             wave_clk <= ~wave_clk;
         end else begin
@@ -127,12 +128,13 @@ module tt_um_waves (
 
     // Phase accumulator for waveforms
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n)
+        if (!rst_n) begin
             phase_accum <= 8'd0;
-        else if (ena)
-            phase_accum <= phase_accum + {2'b00, freq_select[5:0]}; // Zero-extend freq_select to 8 bits
+        end else if (ena) begin
+            phase_accum <= phase_accum + {2'b00, freq_select[5:0]};
+            $display("Phase Accumulator: %d, Freq Select: %b", phase_accum, freq_select);
+        end
     end
-
     // UART Receiver
     uart_receiver uart_rx_inst (
         .clk(clk),
@@ -199,17 +201,14 @@ module tt_um_waves (
             temp_wave   <= 16'd0;
             scaled_wave <= 8'd0;
         end else begin
-             temp_wave <= (selected_wave * adsr_amplitude) >> 8;
-
-        if (adsr_amplitude > 8'd10) 
-            scaled_wave <= (temp_wave[15:8] > 8'd2) ? temp_wave[15:8] : 8'd3; // Ensure a higher minimum value
-        else
-            scaled_wave <= 8'd3; // Avoid too small values
+            temp_wave <= (phase_accum * adsr_amplitude) >> 8;
+            scaled_wave <= (temp_wave[15:8] > 8'd10) ? temp_wave[15:8] : 8'd10;
+            $display("ADSR Amplitude: %d, Scaled Wave: %d", adsr_amplitude, scaled_wave);
         end
     end
 
   
-      wire i2s_sck, i2s_ws, i2s_sd;
+    wire i2s_sck, i2s_ws, i2s_sd;
     i2s_transmitter i2s_out (
         .clk(clk),
         .rst_n(rst_n),
@@ -361,25 +360,23 @@ endmodule
 
 
 module i2s_transmitter (
-    input wire clk,        // System clock
-    input wire rst_n,      // Reset (active low)
-    input wire ena,        // Enable signal
-    input wire [7:0] data, // 8-bit audio data
-    output reg sck,        // Serial clock (bit clock)
-    output reg ws,         // Word select (left/right channel)
-    output reg sd          // Serial data output
+    input wire clk,        
+    input wire rst_n,      
+    input wire ena,        
+    input wire [7:0] data, 
+    output reg sck,        
+    output reg ws,         
+    output reg sd          
 );
 
-    reg [3:0] bit_counter;  // Counts bits being sent
-    reg [15:0] shift_reg;   // Shift register for transmitting data
-    reg [7:0] clk_div;      // Clock divider for generating `sck`
+    reg [3:0] bit_counter;  
+    reg [15:0] shift_reg;   
+    reg [7:0] clk_div;      
 
-    parameter SCK_DIV = 16; // Adjust this based on your clock frequency
+    parameter SCK_DIV = 8;  
 
-    // Display the data and control signals for debugging
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            // Reset all registers
             clk_div    <= 0;
             sck        <= 0;
             ws         <= 0;
@@ -387,31 +384,24 @@ module i2s_transmitter (
             bit_counter <= 0;
             shift_reg  <= 16'd0;
         end else if (ena) begin
-            // Debugging: Display scaled_wave and enable signal
-            $display("Sending scaled_wave: %d to i2s_transmitter", data);
-            $display("ena = %b, sck = %b, ws = %b, sd = %b", ena, sck, ws, sd);
- 
-            // Generación del clock I2S (sck)
             if (clk_div == (SCK_DIV - 1)) begin
                 clk_div <= 0;
-                sck <= ~sck;  // Toggle sck
+                sck <= ~sck;
             end else begin
                 clk_div <= clk_div + 1;
             end
 
-            // Lógica de transmisión de datos
-            if (sck == 0) begin  // Se hace el shift en el flanco de bajada de `sck`
+            if (sck == 0) begin  
                 if (bit_counter == 0) begin
-                    ws <= ~ws;  // Cambia `ws` solo al inicio de un nuevo frame de 16 bits
-                    shift_reg <= ws ? {data, 8'd0} : {8'd0, data}; // L/R separados
+                    ws <= ~ws;  
+                    shift_reg <= ws ? {data, 8'd0} : {8'd0, data}; 
                 end else begin
-                    shift_reg <= shift_reg << 1;  // Shift left para enviar MSB primero
+                    shift_reg <= shift_reg << 1;
                 end
-                sd <= shift_reg[15];  // Se envía el MSB en `sd`
+                sd <= shift_reg[15];
                 bit_counter <= (bit_counter == 15) ? 0 : bit_counter + 1;
             end
         end else begin
-            // Si `ena` es bajo, los valores se mantienen en 0
             sck <= 0;
             ws <= 0;
             sd <= 0;
@@ -419,6 +409,7 @@ module i2s_transmitter (
         end
     end
 endmodule
+
 
 
 
@@ -535,20 +526,21 @@ endmodule
 
 
 module adsr_generator (
-    input  wire       ena,       
-    input  wire       clk,       
-    input  wire       rst_n,     
-    input  wire [7:0] attack,    
-    input  wire [7:0] decay,     
-    input  wire [7:0] sustain,   
-    input  wire [7:0] rel,       
-    output reg  [7:0] amplitude  
+    input  wire        ena,         // Enable signal
+    input  wire        clk,         // Clock signal
+    input  wire        rst_n,       // Reset signal (active low)
+    input  wire [7:0]  attack,      // Attack rate (8-bit resolution)
+    input  wire [7:0]  decay,       // Decay rate (8-bit resolution)
+    input  wire [7:0]  sustain,     // Sustain level (8-bit resolution)
+    input  wire [7:0]  rel,         // Release rate (8-bit resolution)
+    output reg  [7:0]  amplitude    // Output amplitude (8-bit)
 );
 
     // State Encoding
     (* fsm_encoding = "one-hot" *) reg [3:0] state;
 
     // Internal ADSR amplitude tracking
+    reg signed [7:0] next_amplitude;
     reg [7:0] counter;
 
     // Define ADSR states
@@ -558,13 +550,66 @@ module adsr_generator (
     localparam STATE_SUSTAIN = 4'b0011;
     localparam STATE_RELEASE = 4'b0100;
 
+    // -------------------------------
+    // COMBINATIONAL LOGIC BLOCK
+    // -------------------------------
+    always @* begin
+        case (state)
+            // -------------------------
+            // STATE_ATTACK
+            // -------------------------
+            STATE_ATTACK: begin
+                if (amplitude + attack > 255)
+                    next_amplitude = 255;
+                else
+                    next_amplitude = amplitude + attack;
+            end
+
+            // -------------------------
+            // STATE_DECAY
+            // -------------------------
+            STATE_DECAY: begin
+                if ((amplitude - decay) < sustain)
+                    next_amplitude = sustain;
+                else
+                    next_amplitude = (amplitude > decay) ? amplitude - decay : 0;
+            end
+
+            // -------------------------
+            // STATE_SUSTAIN
+            // -------------------------
+            STATE_SUSTAIN: begin
+                next_amplitude = sustain;
+            end
+
+            // -------------------------
+            // STATE_RELEASE
+            // -------------------------
+            STATE_RELEASE: begin
+                if ((amplitude - rel) > 0)
+                    next_amplitude = amplitude - rel;
+                else
+                    next_amplitude = 0;
+            end
+
+            // Default case added to avoid latches
+            default: next_amplitude = 8'd0;
+        endcase
+    end
+
+    // -------------------------------
+    // SEQUENTIAL LOGIC BLOCK
+    // -------------------------------
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            state     <= STATE_IDLE;
-            amplitude <= 8'd0;
-            counter   <= 8'd0;
+            state      <= STATE_IDLE;
+            amplitude  <= 8'd0;
+            counter    <= 8'd0;
         end else if (ena) begin
             case (state)
+                // -------------------------
+                // STATE_IDLE
+                // -------------------------
                 STATE_IDLE: begin
                     if (counter == 8'd255) begin
                         state   <= STATE_ATTACK;
@@ -574,31 +619,32 @@ module adsr_generator (
                     end
                 end
 
+                // -------------------------
+                // STATE_ATTACK
+                // -------------------------
                 STATE_ATTACK: begin
-                    counter <= 8'd0;
-                    if (amplitude < 8'd255)
-                        amplitude <= amplitude + (attack >> 3);
-                    else begin
-                        amplitude <= 8'd255;
+                    amplitude <= next_amplitude;
+                    if (next_amplitude == 255) begin
                         state <= STATE_DECAY;
                     end
                 end
 
+                // -------------------------
+                // STATE_DECAY
+                // -------------------------
                 STATE_DECAY: begin
-                    if (amplitude > sustain) begin
-                        amplitude <= amplitude - ((amplitude - sustain) >> (decay + 1)); // Use full 8-bit decay
-                        if (amplitude < sustain) 
-                            amplitude <= sustain;
-                    end else begin
-                        amplitude <= sustain;
+                    amplitude <= next_amplitude;
+                    if (next_amplitude == sustain) begin
                         state <= STATE_SUSTAIN;
-                        counter <= 8'd0;
                     end
                 end
 
+                // -------------------------
+                // STATE_SUSTAIN
+                // -------------------------
                 STATE_SUSTAIN: begin
                     amplitude <= sustain;
-                    if (counter == 8'd255) begin  
+                    if (counter == 8'd255) begin
                         state   <= STATE_RELEASE;
                         counter <= 8'd0;
                     end else begin
@@ -606,18 +652,21 @@ module adsr_generator (
                     end
                 end
 
+                // -------------------------
+                // STATE_RELEASE
+                // -------------------------
                 STATE_RELEASE: begin
-                    if (amplitude > 8'd0) begin
-                        amplitude <= amplitude - (amplitude >> (rel + 2)); // Use full 8-bit release
-                        if (amplitude == 8'd0) 
-                            state <= STATE_IDLE;
+                    amplitude <= next_amplitude;
+                    if (next_amplitude == 0) begin
+                        state <= STATE_IDLE;
                     end
                 end
 
+                // Added default case to prevent latches
                 default: begin
-                    state <= STATE_IDLE; // Reset to a known state
+                    state     <= STATE_IDLE;
                     amplitude <= 8'd0;
-                    counter <= 8'd0;
+                    counter   <= 8'd0;
                 end
             endcase
         end
