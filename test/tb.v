@@ -37,7 +37,7 @@ module tb;
   initial begin
     rst_n = 0;
     ena = 0;
-    #200;  //Hold reset longer to ensure stability
+    #200;  // Hold reset longer to ensure stability
     rst_n = 1;  // Release reset
     #50;
     ena = 1;    // Enable system after reset is stable

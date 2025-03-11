@@ -390,7 +390,7 @@ module i2s_transmitter (
             // Debugging: Display scaled_wave and enable signal
             $display("Sending scaled_wave: %d to i2s_transmitter", data);
             $display("ena = %b, sck = %b, ws = %b, sd = %b", ena, sck, ws, sd);
-
+ 
             // Generación del clock I2S (sck)
             if (clk_div == (SCK_DIV - 1)) begin
                 clk_div <= 0;
