@@ -37,9 +37,8 @@ module tt_um_waves (
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             phase_accum <= 8'd0;  // Reset phase accumulator to 0
-        end else if (ena) begin
-            // Ensure freq_select is properly extended to 8 bits before addition
-            phase_accum <= phase_accum + {2'b00, freq_select};  
+        end else if (ena && freq_select != 6'b000000) begin
+            phase_accum <= phase_accum + {2'b00, freq_select};
             $display("Phase Accumulator Updated: %d, Freq Select: %b, Ena: %b", phase_accum, freq_select, ena);
         end
     end
@@ -321,13 +320,14 @@ module uart_receiver (
                     default: begin
                         // Handle frequency selection from ASCII
                         if (received_byte >= 8'h30 && received_byte <= 8'h39) begin
-                            freq_select <= received_byte[5:0] - 6'd48; // Convert ASCII '0'-'9' to 0-9
-                        end else if (received_byte >= 8'h41 && received_byte <= 8'h5A) begin
-                            freq_select <= (received_byte[5:0] - 6'd33); // Convert 'A'-'Z' to 10-35
-                        end else begin
-                            freq_select <= 6'b000101; // Force a test frequency
-                        end
-                        $display("Updated freq_select: %b", freq_select); // Debug frequency selection
+    			    freq_select <= 6'(received_byte - 8'h30); // '0'-'9' → 0-9
+			end else if (received_byte >= 8'h41 && received_byte <= 8'h5A) begin
+    			    freq_select <= 6'((received_byte - 8'h41) + 8'd10); // 'A'-'Z' → 10-35
+			end else begin
+    			    freq_select <= 6'd5; // Valor seguro por defecto
+			end
+
+                        $display("Received Byte: %h, Converted freq_select: %d", received_byte, freq_select);
                     end
                 endcase
 
