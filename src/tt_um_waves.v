@@ -38,7 +38,7 @@ module tt_um_waves (
         if (!rst_n) begin
             phase_accum <= 8'd0;
         end else if (ena) begin
-            phase_accum <= (phase_accum + {4'b0000, freq_select})[7:0]; // Ensure proper scaling
+            phase_accum <= phase_accum + {2'b00, freq_select};  // Ensure proper scaling and 8-bit
             $display("Phase Accumulator: %d, Freq Select: %b", phase_accum, freq_select);
         end
     end
