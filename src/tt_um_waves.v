@@ -32,12 +32,34 @@ module tt_um_waves (
   
     // Phase accumulator for all waveforms
     reg [7:0] phase_accum;
-  
-   always @(posedge clk or negedge rst_n) begin
+
+    // Phase accumulator update with correct scaling
+    always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            freq_select <= 6'b001001;  // Default to A2 (110 Hz)
-            freq_divider <= 21'd1136364; 
+            phase_accum <= 16'd0;
+        end else if (ena) begin
+            phase_accum <= phase_accum + {4'b0000, freq_select}; // Ensure proper scaling
+            $display("Phase Accumulator: %d, Freq Select: %b", phase_accum, freq_select);
+        end
+    end
+
+    // Clock Divider for waveform clocking
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            clk_div <= 0;
+            wave_clk <= 0;
+        end else if (clk_div >= (freq_divider >> 1)) begin
+            clk_div <= 0;
+            wave_clk <= ~wave_clk;
+        end else begin
+            clk_div <= clk_div + 1;
+        end
+    end
+  
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
             prev_freq_select <= 6'bxxxxxx;
+            freq_divider <= 21'd1136364;
         end else if (freq_select != prev_freq_select) begin
             prev_freq_select <= freq_select;
             case (freq_select)
@@ -114,27 +136,7 @@ module tt_um_waves (
         end
     end
 
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            clk_div  <= 0;
-            wave_clk <= 0;
-        end else if (clk_div >= (freq_divider >> 1)) begin
-            clk_div  <= 0;
-            wave_clk <= ~wave_clk;
-        end else begin
-            clk_div <= clk_div + 1;
-        end
-    end
 
-    // Phase accumulator for waveforms
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            phase_accum <= 8'd0;
-        end else if (ena) begin
-            phase_accum <= phase_accum + {2'b00, freq_select[5:0]};
-            $display("Phase Accumulator: %d, Freq Select: %b", phase_accum, freq_select);
-        end
-    end
     // UART Receiver
     uart_receiver uart_rx_inst (
         .clk(clk),
@@ -162,11 +164,10 @@ module tt_um_waves (
     cordic_sine_generator sine_gen (.clk(clk), .rst_n(rst_n), .ena(ena), .phase(phase_accum), .sine_out(sine_wave_out));
 
     // Select waveform output
-        // Select waveform output
     reg [7:0] selected_wave;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
-            selected_wave <= 8'd0; // Use a constant zero value
+            selected_wave <= 8'd0;
         else begin
             case (wave_select)
                 3'b000: selected_wave <= tri_wave_out;
@@ -174,11 +175,10 @@ module tt_um_waves (
                 3'b010: selected_wave <= sqr_wave_out;
                 3'b011: selected_wave <= sine_wave_out;
                 3'b100: selected_wave <= noise_out;
-                default: selected_wave <= 8'd0;  // Ensure default assignment
+                default: selected_wave <= 8'd0;
             endcase
         end
     end
-
 
 
 
@@ -194,14 +194,15 @@ module tt_um_waves (
         .ena(ena)
     );
 
-    // Apply ADSR Envelope to waveform
+
+    // Apply ADSR Envelope to waveform output
     reg [7:0] scaled_wave;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             temp_wave   <= 16'd0;
             scaled_wave <= 8'd0;
         end else begin
-            temp_wave <= (phase_accum * adsr_amplitude) >> 8;
+            temp_wave <= (selected_wave * adsr_amplitude) >> 8;
             scaled_wave <= (temp_wave[15:8] > 8'd10) ? temp_wave[15:8] : 8'd10;
             $display("ADSR Amplitude: %d, Scaled Wave: %d", adsr_amplitude, scaled_wave);
         end
