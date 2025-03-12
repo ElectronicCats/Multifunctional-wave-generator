@@ -232,7 +232,6 @@ module tt_um_waves (
 endmodule
 
 
-
 module uart_receiver (
     input wire clk,
     input wire rst_n,
@@ -270,88 +269,86 @@ module uart_receiver (
 
     // Main state machine
     always @(posedge clk or negedge rst_n) begin
-    if (!rst_n) begin
-        received_byte <= 8'd0;
-        bit_count <= 3'd0;
-        receiving <= 1'b0;
-        freq_select <= 6'd0;
-        wave_select <= 3'b000;
-        white_noise_en <= 1'b0;
-        state <= IDLE;
-        baud_counter <= 0;
-        phase_accum_reg <= 8'd0;
-    end else begin
-        case (state)
-            IDLE: begin
-                if (start_bit && !receiving) begin
-                    receiving <= 1'b1;
-                    bit_count <= 0;
-                    baud_counter <= 0;
-                    state <= RECEIVING;
+        if (!rst_n) begin
+            received_byte <= 8'd0;
+            bit_count <= 3'd0;
+            receiving <= 1'b0;
+            freq_select <= 6'd0;
+            wave_select <= 3'b000;
+            white_noise_en <= 1'b0;
+            state <= IDLE;
+            baud_counter <= 0;
+            phase_accum_reg <= 8'd0;
+        end else begin
+            case (state)
+                IDLE: begin
+                    if (start_bit && !receiving) begin
+                        receiving <= 1'b1;
+                        bit_count <= 0;
+                        baud_counter <= 0;
+                        state <= RECEIVING;
+                    end
                 end
-            end
 
-            RECEIVING: begin
-                if (receiving) begin
-                    if (baud_counter == (BAUD_TICKS >> 1)) begin // Sample at middle of bit
-                        received_byte[bit_count] <= rx;
-                        if (bit_count < 3'd7) begin
-                            bit_count <= bit_count + 1;
-                        end else begin
-                            receiving <= 1'b0;
-                            state <= PROCESSING;
+                RECEIVING: begin
+                    if (receiving) begin
+                        if (baud_counter == (BAUD_TICKS >> 1)) begin // Sample at middle of bit
+                            received_byte[bit_count] <= rx;
+                            if (bit_count < 3'd7) begin
+                                bit_count <= bit_count + 1;
+                            end else begin
+                                receiving <= 1'b0;
+                                state <= PROCESSING;
+                            end
                         end
+                        baud_counter <= baud_counter + 1;
                     end
-                    baud_counter <= baud_counter + 1;
-                end
-            end
-
-            PROCESSING: begin
-                // Debugging the received byte
-                $display("Received Byte: %h", received_byte);
-
-                case (received_byte)
-                    8'h4E: white_noise_en <= 1'b1; // 'N' -> Enable white noise
-                    8'h46: white_noise_en <= 1'b0; // 'F' -> Disable white noise
-                    8'h54: wave_select <= 3'b000; // 'T' -> Triangle
-                    8'h53: wave_select <= 3'b001; // 'S' -> Sawtooth
-                    8'h51: wave_select <= 3'b010; // 'Q' -> Square
-                    8'h57: wave_select <= 3'b011; // 'W' -> Sine
-                    default: begin
-                        // Handle frequency selection from ASCII
-                        if (received_byte >= 8'h30 && received_byte <= 8'h39) begin
-    			    freq_select <= 6'(received_byte - 8'h30); // '0'-'9' → 0-9
-			end else if (received_byte >= 8'h41 && received_byte <= 8'h5A) begin
-    			    freq_select <= 6'((received_byte - 8'h41) + 8'd10); // 'A'-'Z' → 10-35
-			end else begin
-    			    freq_select <= 6'd5; // Valor seguro por defecto
-			end
-
-                        $display("Received Byte: %h, Converted freq_select: %d", received_byte, freq_select);
-                    end
-                endcase
-
-                // Ensure proper bit-width comparison for frequency selection
-                if (freq_select != 6'b000000) begin
-                    phase_accum_reg <= phase_accum_reg + {2'b00, freq_select};
-                    $display("Phase Accumulator Updated: %d", phase_accum_reg); // Debug phase accumulator
                 end
 
-                state <= IDLE;
-            end
+                PROCESSING: begin
+                    // Debugging the received byte
+                    $display("Received Byte: %h", received_byte);
 
-            default: begin
-                // Handle unexpected states (safety fallback)
-                state <= IDLE;
-            end
-        endcase
+                    case (received_byte)
+                        8'h4E: white_noise_en <= 1'b1; // 'N' -> Enable white noise
+                        8'h46: white_noise_en <= 1'b0; // 'F' -> Disable white noise
+                        8'h54: wave_select <= 3'b000; // 'T' -> Triangle wave
+                        8'h53: wave_select <= 3'b001; // 'S' -> Sawtooth wave
+                        8'h51: wave_select <= 3'b010; // 'Q' -> Square wave
+                        8'h57: wave_select <= 3'b011; // 'W' -> Sine wave
+                        default: begin
+                            // Handle frequency selection from ASCII characters
+                            if (received_byte >= 8'h30 && received_byte <= 8'h39) begin
+                                // Convert '0'-'9' to 0-9 (6-bit)
+                                freq_select <= (received_byte[5:0] - 6'h30) & 6'b111111; // Mask to 6 bits
+                            end else if (received_byte >= 8'h41 && received_byte <= 8'h5A) begin
+                                // Convert 'A'-'Z' to 10-35
+                                freq_select <= ((received_byte[5:0] - 6'h41) + 6'd10) & 6'b111111; // Mask to 6 bits
+                            end else begin
+                                freq_select <= 6'd5; // Default safe value
+                            end
+
+                            // Debugging frequency selection
+                            $display("Received Byte: %h, Converted freq_select: %d", received_byte, freq_select);
+                        end
+                    endcase
+
+                    // Ensure frequency selection is valid before updating phase accumulator
+                    if (freq_select == 6'b000000) freq_select <= 6'd5; // Prevent zero values
+                    phase_accum_reg <= phase_accum_reg + {2'b00, freq_select}; // Update phase accumulator
+                    $display("Phase Accumulator Updated: %d", phase_accum_reg);
+                    
+                    state <= IDLE;
+                end
+
+                default: begin
+                    // Handle unexpected states (safety fallback)
+                    state <= IDLE;
+                end
+            endcase
+        end
     end
-end
 endmodule
-
-
-
-
 
 
 module white_noise_generator (
