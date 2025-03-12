@@ -36,9 +36,9 @@ module tt_um_waves (
     // Phase accumulator update with correct scaling
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            phase_accum <= 16'd0;
+            phase_accum <= 8'd0;
         end else if (ena) begin
-            phase_accum <= phase_accum + {4'b0000, freq_select}; // Ensure proper scaling
+            phase_accum <= (phase_accum + {4'b0000, freq_select})[7:0]; // Ensure proper scaling
             $display("Phase Accumulator: %d, Freq Select: %b", phase_accum, freq_select);
         end
     end
