@@ -40,7 +40,7 @@ module tt_um_waves (
         end else if (ena) begin
             // Ensure freq_select is properly extended to 8 bits before addition
             phase_accum <= phase_accum + {2'b00, freq_select};  
-            $display("Phase Accumulator: %d, Freq Select: %b", phase_accum, freq_select);
+            $display("Phase Accumulator Updated: %d, Freq Select: %b, Ena: %b", phase_accum, freq_select, ena);
         end
     end
 
@@ -238,9 +238,9 @@ module uart_receiver (
     input wire clk,
     input wire rst_n,
     input wire rx,               // UART RX Input
-    output reg [5:0] freq_select, // Frequency selection (e.g., A4, B3, etc.)
-    output reg [2:0] wave_select, // Waveform select (square, sine, etc.)
-    output reg white_noise_en     // White Noise enable
+    output reg [5:0] freq_select, // Frequency selection (0-63)
+    output reg [2:0] wave_select, // Waveform selection (square, sine, etc.)
+    output reg white_noise_en     // White noise enable
 );
     
     // Parameters
@@ -308,6 +308,8 @@ module uart_receiver (
                 end
 
                 PROCESSING: begin
+                    $display("Received Byte: %h", received_byte); // Debug UART data
+
                     case (received_byte)
                         8'h4E: white_noise_en <= 1'b1; // 'N' -> Enable white noise
                         8'h46: white_noise_en <= 1'b0; // 'F' -> Disable white noise
@@ -324,9 +326,13 @@ module uart_receiver (
                         end
                     endcase
 
+                    // Debugging Frequency Selection Update
+                    $display("Updated freq_select: %b", freq_select);
+
                     // Ensure proper bit-width comparison
                     if (freq_select != received_byte[5:0]) begin
                         phase_accum_reg <= phase_accum_reg + {2'b00, freq_select};
+                        $display("Phase Accumulator Updated: %d", phase_accum_reg);
                     end
                     
                     state <= IDLE;
@@ -337,6 +343,7 @@ module uart_receiver (
         end
     end
 endmodule
+
 
 
 
