@@ -33,15 +33,17 @@ module tt_um_waves (
     // Phase accumulator for all waveforms
     reg [7:0] phase_accum;
 
-    // Phase accumulator update with correct scaling
+    // Phase accumulator update with correct scaling 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            phase_accum <= 8'd0;
+            phase_accum <= 8'd0;  // Reset phase accumulator to 0
         end else if (ena) begin
-            phase_accum <= phase_accum + {2'b00, freq_select};  // Ensure proper scaling and 8-bit
+            // Ensure freq_select is properly extended to 8 bits before addition
+            phase_accum <= phase_accum + {2'b00, freq_select};  
             $display("Phase Accumulator: %d, Freq Select: %b", phase_accum, freq_select);
         end
     end
+
 
     // Clock Divider for waveform clocking
     always @(posedge clk or negedge rst_n) begin
