@@ -29,6 +29,8 @@ module tt_um_waves (
     reg [20:0] clk_div;
     reg wave_clk;
     reg [5:0] prev_freq_select;
+    wire [20:0] uart_freq_divider;  // intermediate signal
+
   
     // Phase accumulator for all waveforms
     reg [7:0] phase_accum;
