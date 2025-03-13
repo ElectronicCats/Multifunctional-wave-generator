@@ -237,25 +237,24 @@ endmodule
 module uart_receiver (
     input wire clk,
     input wire rst_n,
-    input wire rx,               // UART RX Input
-    output reg [5:0] freq_select, // Frequency selection (0-63)
-    output reg [2:0] wave_select, // Waveform selection (square, sine, etc.)
-    output reg white_noise_en,    // White noise enable
+    input wire rx,                 // UART RX Input
+    output reg [5:0] freq_select,  // Frequency selection (0-63)
+    output reg [2:0] wave_select,  // Waveform selection (square, sine, etc.)
+    output reg white_noise_en,     // White noise enable
     output reg [20:0] freq_divider // Frequency divider output
 );
 
     // UART Parameters
-    parameter BAUD_TICKS = 2604;  // Baud rate clock ticks 
-    
+    parameter BAUD_TICKS = 2604;
+
     // Internal Registers
     reg [31:0] baud_counter;
     reg [7:0] received_byte;
     reg [2:0] bit_count;
     reg receiving;
     reg [1:0] state;
-    
+
     // Temporary registers for bitwidth management
-    reg [7:0] temp_result;  
     reg [5:0] temp_freq;
 
     // State machine states
@@ -264,7 +263,7 @@ module uart_receiver (
     localparam PROCESSING = 2'b10;
 
     // Default Frequency Selection
-    initial freq_select = 6'b001001; // A2 (110Hz) Default
+    initial freq_select = 6'b001001; // A2 (110 Hz) Default
 
     // Start Bit Detection
     reg rx_last;
@@ -279,15 +278,15 @@ module uart_receiver (
     // UART Receiver State Machine
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            received_byte <= 8'd0;
-            bit_count <= 3'd0;
-            receiving <= 1'b0;
-            freq_select <= 6'b001001;
-            wave_select <= 3'b000;
-            white_noise_en <= 1'b0;
-            freq_divider <= 21'd1136364;
-            state <= IDLE;
-            baud_counter <= 0;
+            received_byte   <= 8'd0;
+            bit_count       <= 3'd0;
+            receiving       <= 1'b0;
+            freq_select     <= 6'b001001;
+            wave_select     <= 3'b000;
+            white_noise_en  <= 1'b0;
+            freq_divider    <= 21'd1136364;
+            state           <= IDLE;
+            baud_counter    <= 0;
         end else begin
             case (state)
                 IDLE: begin
@@ -318,19 +317,17 @@ module uart_receiver (
                     case (received_byte)
                         8'h4E: white_noise_en <= 1'b1; // 'N' -> Enable white noise
                         8'h46: white_noise_en <= 1'b0; // 'F' -> Disable white noise
-                        8'h54: wave_select <= 3'b000; // 'T' -> Triangle wave
-                        8'h53: wave_select <= 3'b001; // 'S' -> Sawtooth wave
-                        8'h51: wave_select <= 3'b010; // 'Q' -> Square wave
-                        8'h57: wave_select <= 3'b011; // 'W' -> Sine wave
+                        8'h54: wave_select <= 3'b000;  // 'T' -> Triangle wave
+                        8'h53: wave_select <= 3'b001;  // 'S' -> Sawtooth wave
+                        8'h51: wave_select <= 3'b010;  // 'Q' -> Square wave
+                        8'h57: wave_select <= 3'b011;  // 'W' -> Sine wave
                         default: begin
                             if (received_byte >= 8'h30 && received_byte <= 8'h39) begin
-                                temp_result <= received_byte - 8'h30; // Use non-blocking assignment
-                                temp_freq <= temp_result[5:0];       // Ensure 6-bit truncation
+                                temp_freq <= received_byte[5:0];
                             end else if (received_byte >= 8'h41 && received_byte <= 8'h5A) begin
-                                temp_result <= (received_byte - 8'h41) + 8'd10; // Use non-blocking assignment
-                                temp_freq <= temp_result[5:0];                 // Ensure 6-bit truncation
+                                temp_freq <= (received_byte - 8'h41) + 6'd10;
                             end else begin
-                                temp_freq <= 6'd5; // Default safe value
+                                temp_freq <= 6'd5;
                             end
                         end
                     endcase
@@ -341,7 +338,7 @@ module uart_receiver (
                     // Assign corresponding frequency divider
                     case (temp_freq)
                         6'b000000: freq_divider <= 21'd1915712;  // C2 (65.41 Hz)
-       	                6'b000001: freq_divider <= 21'd1803586;  // C#2/Db2 (69.30 Hz)
+                        6'b000001: freq_divider <= 21'd1803586;  // C#2/Db2 (69.30 Hz)
                         6'b000010: freq_divider <= 21'd1702624;  // D2 (73.42 Hz)
                         6'b000011: freq_divider <= 21'd1607142;  // D#2/Eb2 (77.78 Hz)
                         6'b000100: freq_divider <= 21'd1515152;  // E2 (82.41 Hz)
@@ -358,66 +355,22 @@ module uart_receiver (
                         6'b001101: freq_divider <= 21'd90180;    // C#3/Db3 (138.59 Hz)
                         6'b001110: freq_divider <= 21'd85131;    // D3 (146.83 Hz)
                         6'b001111: freq_divider <= 21'd80357;    // D#3/Eb3 (155.56 Hz)
-                        6'b010000: freq_divider <= 21'd75758;    // E3 (164.81 Hz)
-                        6'b010001: freq_divider <= 21'd71586;    // F3 (174.61 Hz)
-                        6'b010010: freq_divider <= 21'd67567;    // F#3/Gb3 (185.00 Hz)
-                        6'b010011: freq_divider <= 21'd63775;    // G3 (196.00 Hz)
-                        6'b010100: freq_divider <= 21'd60241;    // G#3/Ab3 (207.65 Hz)
-                        6'b010101: freq_divider <= 21'd56818;    // A3 (220.00 Hz)
-                        6'b010110: freq_divider <= 21'd53763;    // A#3/Bb3 (233.08 Hz)
-                        6'b010111: freq_divider <= 21'd50867;    // B3 (246.94 Hz)
 
-                        // Octave 4
-                        6'b011000: freq_divider <= 21'd47878;    // C4 (261.63 Hz)
-                        6'b011001: freq_divider <= 21'd45090;    // C#4/Db4 (277.18 Hz)
-                        6'b011010: freq_divider <= 21'd42566;    // D4 (293.66 Hz)
-                        6'b011011: freq_divider <= 21'd40178;    // D#4/Eb4 (311.13 Hz)
-                        6'b011100: freq_divider <= 21'd37878;    // E4 (329.63 Hz)
-                        6'b011101: freq_divider <= 21'd35793;    // F4 (349.23 Hz)
-                        6'b011110: freq_divider <= 21'd33783;    // F#4/Gb4 (369.99 Hz)
-                        6'b011111: freq_divider <= 21'd31888;    // G4 (392.00 Hz)
-                        6'b100000: freq_divider <= 21'd30120;    // G#4/Ab4 (415.30 Hz)
-                        6'b100001: freq_divider <= 21'd28409;    // A4 (440.00 Hz)
-                        6'b100010: freq_divider <= 21'd26881;    // A#4/Bb4 (466.16 Hz)
-                        6'b100011: freq_divider <= 21'd25434;    // B4 (493.88 Hz)
-
-                        // Octave 5
-                        6'b100100: freq_divider <= 21'd23939;    // C5 (523.25 Hz)
-                        6'b100101: freq_divider <= 21'd22545;    // C#5/Db5 (554.37 Hz)
-                        6'b100110: freq_divider <= 21'd21283;    // D5 (587.33 Hz)
-                        6'b100111: freq_divider <= 21'd20089;    // D#5/Eb5 (622.25 Hz)
-                        6'b101000: freq_divider <= 21'd18938;    // E5 (659.25 Hz)
-                        6'b101001: freq_divider <= 21'd17896;    // F5 (698.46 Hz)
-                        6'b101010: freq_divider <= 21'd16891;    // F#5/Gb5 (739.99 Hz)
-                        6'b101011: freq_divider <= 21'd15944;    // G5 (783.99 Hz)
-                        6'b101100: freq_divider <= 21'd15060;    // G#5/Ab5 (830.61 Hz)
-                        6'b101101: freq_divider <= 21'd14204;    // A5 (880.00 Hz)
-                        6'b101110: freq_divider <= 21'd13441;    // A#5/Bb5 (932.33 Hz)
-                        6'b101111: freq_divider <= 21'd12717;    // B5 (987.77 Hz)
-
-                        // Octave 6
-                        6'b110000: freq_divider <= 21'd11969;    // C6 (1046.50 Hz)
-                        6'b110001: freq_divider <= 21'd11272;    // C#6/Db6 (1108.73 Hz)
-                        6'b110010: freq_divider <= 21'd10642;    // D6 (1174.66 Hz)
-                        6'b110011: freq_divider <= 21'd10044;    // D#6/Eb6 (1244.51 Hz)
-                        6'b110100: freq_divider <= 21'd9470;     // E6 (1318.51 Hz)
-                        6'b110101: freq_divider <= 21'd8948;     // F6 (1396.91 Hz)
-                        6'b110110: freq_divider <= 21'd8445;     // F#6/Gb6 (1479.98 Hz)
-                        6'b110111: freq_divider <= 21'd7972;     // G6 (1567.98 Hz)
-                        6'b111000: freq_divider <= 21'd7518;     // G#6/Ab6 (1661.22 Hz)
-                        6'b111001: freq_divider <= 21'd7090;     // A6 (1760.00 Hz)
-                        6'b111010: freq_divider <= 21'd6719;     // A#6/Bb6 (1864.66 Hz)
-                        6'b111011: freq_divider <= 21'd6358;     // B6 (1975.53 Hz)
+                        // Default value
                         default: freq_divider <= 21'd284091;
                     endcase
 
                     state <= IDLE;
                 end
-
-                default: state <= IDLE;
             endcase
         end
     end
+
+    // Lint off for unused bits
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire unused_bits = received_byte[7:6];
+    /* verilator lint_on UNUSEDSIGNAL */
+
 endmodule
 
 
