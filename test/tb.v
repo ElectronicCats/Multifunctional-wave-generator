@@ -41,15 +41,16 @@ module tb;
     ena = 0;
     #500;  // Longer reset for stability
     rst_n = 1;
-    #100;
+    #200;  // Ensure stable startup
     ena = 1;    
     $display("[TB] Reset complete: rst_n=%b, ena=%b", rst_n, ena);
   end
 
-  // UART Transmission Task
+  // UART Transmission Task with Improved Logging
   task uart_send(input [7:0] data);
     integer i;
     begin
+      $display("[TB] Sending UART Data: 0x%h", data);
       ui_in[0] <= 0;  // Start bit
       repeat (2604) @(posedge clk); 
 
@@ -60,30 +61,41 @@ module tb;
 
       ui_in[0] <= 1;  // Stop bit
       repeat (2604) @(posedge clk);
+
+      // ✅ UART Sequence Validation
+      if (ui_in[0] !== 1)
+        $display("[ERROR] UART transmission error: Stop bit not detected.");
     end
   endtask
 
-  // I2S Debugging (Trigger on WS change)
+  // Enhanced I2S Debugging (Trigger on WS change)
   always @(posedge i2s_ws) begin
-    $display("[TB] I2S Frame: SCK=%b, WS=%b, SD=%b", i2s_sck, i2s_ws, i2s_sd);
+    if (i2s_sd === 1'bx)
+      $display("[ERROR] I2S Data Error: Invalid state detected.");
+    else
+      $display("[TB] I2S Frame: SCK=%b, WS=%b, SD=%b", i2s_sck, i2s_ws, i2s_sd);
   end
 
   // UART Commands for Waveform & Frequency Selection
   initial begin
     #1000;  
     uart_send(8'h54);  // 'T' -> Triangle Wave
-    #5000;
+    #2000;              // ⏳ Added delay for processing
     uart_send(8'h57);  // 'W' -> Sine Wave
-    #5000;
+    #2000;
     uart_send(8'h41);  // 'A' -> A4 (440 Hz)
-    #10000; 
+    #3000; 
     $display("[TB] Waveform & Frequency Selection Done.");
   end
 
-  // ADSR Control Test
+  // Improved ADSR Control Test with Value Changes
   initial begin
     #2000;
-    uio_in = 8'b11000000; // Simulated encoder values
+    uio_in = 8'b11000000; // Initial encoder values
+    #3000;
+    uio_in = 8'b10010000; // Simulated encoder value change
+    #3000;
+    uio_in = 8'b11110000; // Another simulated encoder value change
     #5000;
     $display("[TB] ADSR Test Complete.");
     $finish;
