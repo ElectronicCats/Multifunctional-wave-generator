@@ -7,8 +7,9 @@ module tb;
     $dumpvars(0, tb);
   end
 
+  // Clock Generation: 25 MHz (40ns period)
   reg clk = 0;
-  always #20 clk = ~clk;  // 25 MHz clock (40ns period)
+  always #20 clk = ~clk;
 
   reg rst_n;
   reg ena;
@@ -22,6 +23,7 @@ module tb;
   wire i2s_ws  = uo_out[1];
   wire i2s_sd  = uo_out[2];
 
+  // DUT Instantiation
   tt_um_waves dut (
       .ui_in  (ui_in),
       .uo_out (uo_out),
@@ -33,23 +35,23 @@ module tb;
       .rst_n  (rst_n)
   );
 
-  // Improved reset and enable handling
+  // Improved Reset & Enable Handling
   initial begin
     rst_n = 0;
     ena = 0;
-    #200;  // Hold reset longer to ensure stability
-    rst_n = 1;  // Release reset
-    #50;
-    ena = 1;    // Enable system after reset is stable
-    $display("Reset applied: Reset=%b, Ena=%b", rst_n, ena);
+    #500;  // Longer reset for stability
+    rst_n = 1;
+    #100;
+    ena = 1;    
+    $display("[TB] Reset complete: rst_n=%b, ena=%b", rst_n, ena);
   end
 
-  // UART transmission simulation for waveform and frequency selection
+  // UART Transmission Task
   task uart_send(input [7:0] data);
     integer i;
     begin
       ui_in[0] <= 0;  // Start bit
-      repeat (2604) @(posedge clk); // Simulating 115200 baud
+      repeat (2604) @(posedge clk); 
 
       for (i = 0; i < 8; i = i + 1) begin
         ui_in[0] <= data[i];
@@ -61,29 +63,29 @@ module tb;
     end
   endtask
 
-  // Debugging for I2S output (Print only on `ws` transition)
+  // I2S Debugging (Trigger on WS change)
   always @(posedge i2s_ws) begin
-    $display("I2S Frame Start: SCK=%b, WS=%b, SD=%b", i2s_sck, i2s_ws, i2s_sd);
+    $display("[TB] I2S Frame: SCK=%b, WS=%b, SD=%b", i2s_sck, i2s_ws, i2s_sd);
   end
 
-  // Initial waveform selection via UART
+  // UART Commands for Waveform & Frequency Selection
   initial begin
-    #500;  
-    uart_send(8'h54);  // 'T' for Triangle
-    #10000; // 🔹 Add delay before next command
-    uart_send(8'h57);  // 'W' for Sine
-    #10000;
-    uart_send(8'h41);  // Frequency A4 (440 Hz)
-    #20000; // 🔹 Allow system time to process
-    $display("Waveform test completed.");
+    #1000;  
+    uart_send(8'h54);  // 'T' -> Triangle Wave
+    #5000;
+    uart_send(8'h57);  // 'W' -> Sine Wave
+    #5000;
+    uart_send(8'h41);  // 'A' -> A4 (440 Hz)
+    #10000; 
+    $display("[TB] Waveform & Frequency Selection Done.");
   end
 
-  // ADSR control test
+  // ADSR Control Test
   initial begin
-    #1000;
+    #2000;
     uio_in = 8'b11000000; // Simulated encoder values
-    #10000; // 🔹 Increase time before ending simulation
-    $display("ADSR Test Complete.");
+    #5000;
+    $display("[TB] ADSR Test Complete.");
     $finish;
   end
 
