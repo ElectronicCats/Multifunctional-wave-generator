@@ -254,9 +254,9 @@ module uart_receiver (
                         8'h57: wave_select <= 3'b011;  // 'W' -> Sine wave
                         default: begin
                             if (received_byte >= 8'h30 && received_byte <= 8'h39) begin
-                                temp_freq <= received_byte[5:0] & 6'd63; // Asegurar 6 bits
+                                temp_freq <= received_byte[5:0] & 6'b111111; // Ensure 6-bit value
                             end else if (received_byte >= 8'h41 && received_byte <= 8'h5A) begin
-                                temp_freq <= 6'(received_byte - 8'h41 + 8'd10);  // Force 6-bit value
+                                temp_freq <= 6'(received_byte - 8'h41 + 8'd10); 
                             end else begin
                                 temp_freq <= 6'd5;
                             end
@@ -268,22 +268,74 @@ module uart_receiver (
 
                     // Asignar frecuencia del divisor
                     case (temp_freq)
-                        6'd0: freq_divider <= 21'd1915712;  // C2 (65.41 Hz)
-                        6'd1: freq_divider <= 21'd1803586;  // C#2/Db2 (69.30 Hz)
-                        6'd2: freq_divider <= 21'd1702624;  // D2 (73.42 Hz)
-                        6'd3: freq_divider <= 21'd1607142;  // D#2/Eb2 (77.78 Hz)
-                        6'd4: freq_divider <= 21'd1515152;  // E2 (82.41 Hz)
-                        6'd5: freq_divider <= 21'd1431731;  // F2 (87.31 Hz)
-                        6'd6: freq_divider <= 21'd1351351;  // F#2/Gb2 (92.50 Hz)
-                        6'd7: freq_divider <= 21'd1275510;  // G2 (98.00 Hz)
-                        6'd8: freq_divider <= 21'd1204819;  // G#2/Ab2 (103.83 Hz)
-                        6'd9: freq_divider <= 21'd1136364;  // A2 (110.00 Hz)
-                        6'd10: freq_divider <= 21'd1075268;  // A#2/Bb2 (116.54 Hz)
-                        6'd11: freq_divider <= 21'd1017340;  // B2 (123.47 Hz)
-                        6'd12: freq_divider <= 21'd95786;    // C3 (130.81 Hz)
-                        6'd13: freq_divider <= 21'd90180;    // C#3/Db3 (138.59 Hz)
-                        6'd14: freq_divider <= 21'd85131;    // D3 (146.83 Hz)
-                        6'd15: freq_divider <= 21'd80357;    // D#3/Eb3 (155.56 Hz)
+                        6'b000000: freq_divider <= 21'd1915712;  // C2 (65.41 Hz)
+       	                6'b000001: freq_divider <= 21'd1803586;  // C#2/Db2 (69.30 Hz)
+                        6'b000010: freq_divider <= 21'd1702624;  // D2 (73.42 Hz)
+                        6'b000011: freq_divider <= 21'd1607142;  // D#2/Eb2 (77.78 Hz)
+                        6'b000100: freq_divider <= 21'd1515152;  // E2 (82.41 Hz)
+                        6'b000101: freq_divider <= 21'd1431731;  // F2 (87.31 Hz)
+                        6'b000110: freq_divider <= 21'd1351351;  // F#2/Gb2 (92.50 Hz)
+                        6'b000111: freq_divider <= 21'd1275510;  // G2 (98.00 Hz)
+                        6'b001000: freq_divider <= 21'd1204819;  // G#2/Ab2 (103.83 Hz)
+                        6'b001001: freq_divider <= 21'd1136364;  // A2 (110.00 Hz)
+                        6'b001010: freq_divider <= 21'd1075268;  // A#2/Bb2 (116.54 Hz)
+                        6'b001011: freq_divider <= 21'd1017340;  // B2 (123.47 Hz)
+
+                        // Octave 3
+                        6'b001100: freq_divider <= 21'd95786;    // C3 (130.81 Hz)
+                        6'b001101: freq_divider <= 21'd90180;    // C#3/Db3 (138.59 Hz)
+                        6'b001110: freq_divider <= 21'd85131;    // D3 (146.83 Hz)
+                        6'b001111: freq_divider <= 21'd80357;    // D#3/Eb3 (155.56 Hz)
+                        6'b010000: freq_divider <= 21'd75758;    // E3 (164.81 Hz)
+                        6'b010001: freq_divider <= 21'd71586;    // F3 (174.61 Hz)
+                        6'b010010: freq_divider <= 21'd67567;    // F#3/Gb3 (185.00 Hz)
+                        6'b010011: freq_divider <= 21'd63775;    // G3 (196.00 Hz)
+                        6'b010100: freq_divider <= 21'd60241;    // G#3/Ab3 (207.65 Hz)
+                        6'b010101: freq_divider <= 21'd56818;    // A3 (220.00 Hz)
+                        6'b010110: freq_divider <= 21'd53763;    // A#3/Bb3 (233.08 Hz)
+                        6'b010111: freq_divider <= 21'd50867;    // B3 (246.94 Hz)
+
+                        // Octave 4
+                        6'b011000: freq_divider <= 21'd47878;    // C4 (261.63 Hz)
+                        6'b011001: freq_divider <= 21'd45090;    // C#4/Db4 (277.18 Hz)
+                        6'b011010: freq_divider <= 21'd42566;    // D4 (293.66 Hz)
+                        6'b011011: freq_divider <= 21'd40178;    // D#4/Eb4 (311.13 Hz)
+                        6'b011100: freq_divider <= 21'd37878;    // E4 (329.63 Hz)
+                        6'b011101: freq_divider <= 21'd35793;    // F4 (349.23 Hz)
+                        6'b011110: freq_divider <= 21'd33783;    // F#4/Gb4 (369.99 Hz)
+                        6'b011111: freq_divider <= 21'd31888;    // G4 (392.00 Hz)
+                        6'b100000: freq_divider <= 21'd30120;    // G#4/Ab4 (415.30 Hz)
+                        6'b100001: freq_divider <= 21'd28409;    // A4 (440.00 Hz)
+                        6'b100010: freq_divider <= 21'd26881;    // A#4/Bb4 (466.16 Hz)
+                        6'b100011: freq_divider <= 21'd25434;    // B4 (493.88 Hz)
+
+                        // Octave 5
+                        6'b100100: freq_divider <= 21'd23939;    // C5 (523.25 Hz)
+                        6'b100101: freq_divider <= 21'd22545;    // C#5/Db5 (554.37 Hz)
+                        6'b100110: freq_divider <= 21'd21283;    // D5 (587.33 Hz)
+                        6'b100111: freq_divider <= 21'd20089;    // D#5/Eb5 (622.25 Hz)
+                        6'b101000: freq_divider <= 21'd18938;    // E5 (659.25 Hz)
+                        6'b101001: freq_divider <= 21'd17896;    // F5 (698.46 Hz)
+                        6'b101010: freq_divider <= 21'd16891;    // F#5/Gb5 (739.99 Hz)
+                        6'b101011: freq_divider <= 21'd15944;    // G5 (783.99 Hz)
+                        6'b101100: freq_divider <= 21'd15060;    // G#5/Ab5 (830.61 Hz)
+                        6'b101101: freq_divider <= 21'd14204;    // A5 (880.00 Hz)
+                        6'b101110: freq_divider <= 21'd13441;    // A#5/Bb5 (932.33 Hz)
+                        6'b101111: freq_divider <= 21'd12717;    // B5 (987.77 Hz)
+
+                        // Octave 6
+                        6'b110000: freq_divider <= 21'd11969;    // C6 (1046.50 Hz)
+                        6'b110001: freq_divider <= 21'd11272;    // C#6/Db6 (1108.73 Hz)
+                        6'b110010: freq_divider <= 21'd10642;    // D6 (1174.66 Hz)
+                        6'b110011: freq_divider <= 21'd10044;    // D#6/Eb6 (1244.51 Hz)
+                        6'b110100: freq_divider <= 21'd9470;     // E6 (1318.51 Hz)
+                        6'b110101: freq_divider <= 21'd8948;     // F6 (1396.91 Hz)
+                        6'b110110: freq_divider <= 21'd8445;     // F#6/Gb6 (1479.98 Hz)
+                        6'b110111: freq_divider <= 21'd7972;     // G6 (1567.98 Hz)
+                        6'b111000: freq_divider <= 21'd7518;     // G#6/Ab6 (1661.22 Hz)
+                        6'b111001: freq_divider <= 21'd7090;     // A6 (1760.00 Hz)
+                        6'b111010: freq_divider <= 21'd6719;     // A#6/Bb6 (1864.66 Hz)
+                        6'b111011: freq_divider <= 21'd6358;     // B6 (1975.53 Hz)
                         default: freq_divider <= 21'd284091;
                     endcase
 
@@ -496,85 +548,85 @@ module adsr_generator (
     input  wire        ena,         // Enable signal
     input  wire        clk,         // Clock signal
     input  wire        rst_n,       // Reset signal (active low)
-    input  wire [7:0]  attack,      // Attack rate (8-bit resolution)
-    input  wire [7:0]  decay,       // Decay rate (8-bit resolution)
-    input  wire [7:0]  sustain,     // Sustain level (8-bit resolution)
-    input  wire [7:0]  rel,         // Release rate (8-bit resolution)
+    input  wire [7:0]  attack,      // Attack rate (8-bit resolution) from encoder
+    input  wire [7:0]  decay,       // Decay rate (8-bit resolution) from encoder
+    input  wire [7:0]  sustain,     // Sustain level (8-bit resolution) from encoder
+    input  wire [7:0]  rel,         // Release rate (8-bit resolution) from encoder
     output reg  [7:0]  amplitude    // Output amplitude (8-bit)
 );
 
     // State Encoding
-    typedef enum logic [3:0] {
-        STATE_IDLE    = 4'b0000,
-        STATE_ATTACK  = 4'b0001,
-        STATE_DECAY   = 4'b0010,
-        STATE_SUSTAIN = 4'b0011,
-        STATE_RELEASE = 4'b0100
+    typedef enum logic [2:0] {
+        STATE_IDLE    = 3'b000,
+        STATE_ATTACK  = 3'b001,
+        STATE_DECAY   = 3'b010,
+        STATE_SUSTAIN = 3'b011,
+        STATE_RELEASE = 3'b100
     } adsr_state_t;
 
     adsr_state_t state;
-    reg [7:0] counter;
+
+    // Internal registers for smooth transitions
+    reg [15:0] attack_counter;
+    reg [15:0] decay_counter;
+    reg [15:0] release_counter;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            state     <= STATE_IDLE;
-            amplitude <= 8'd0;
-            counter   <= 8'd0;
+            state            <= STATE_IDLE;
+            amplitude        <= 8'd0;
+            attack_counter   <= 16'd0;
+            decay_counter    <= 16'd0;
+            release_counter  <= 16'd0;
         end else if (ena) begin
             case (state)
-                // ---------- IDLE STATE ----------
+                // --------- IDLE ---------
                 STATE_IDLE: begin
                     amplitude <= 8'd0;
-                    counter   <= 8'd0;
-                    if (attack > 0) state <= STATE_ATTACK;
+                    if (attack > 0) 
+                        state <= STATE_ATTACK;
                 end
                 
-                // ---------- ATTACK STATE ----------
+                // --------- ATTACK ---------
                 STATE_ATTACK: begin
-                    if (counter < attack) begin
-                        counter <= counter + 1;
+                    if (attack_counter < {attack, 8'd0}) begin
+                        attack_counter <= attack_counter + 1;
+                        amplitude <= amplitude + 1;
                     end else begin
-                        counter <= 0;
-                        if (amplitude < 255) 
-                            amplitude <= amplitude + 1;
-                        if (amplitude >= 255) 
-                            state <= STATE_DECAY;
+                        attack_counter <= 16'd0;
+                        state <= STATE_DECAY;
                     end
                 end
                 
-                // ---------- DECAY STATE ----------
+                // --------- DECAY ---------
                 STATE_DECAY: begin
-                    if (counter < decay) begin
-                        counter <= counter + 1;
-                    end else begin
-                        counter <= 0;
-                        if (amplitude > sustain)
+                    if (amplitude > sustain) begin
+                        if (decay_counter < {decay, 8'd0}) begin
+                            decay_counter <= decay_counter + 1;
                             amplitude <= amplitude - 1;
-                        else
-                            amplitude <= sustain;
-                        if (amplitude <= sustain) 
-                            state <= STATE_SUSTAIN;
+                        end else begin
+                            decay_counter <= 16'd0;
+                        end
+                    end else begin
+                        state <= STATE_SUSTAIN;
                     end
                 end
                 
-                // ---------- SUSTAIN STATE ----------
+                // --------- SUSTAIN ---------
                 STATE_SUSTAIN: begin
                     amplitude <= sustain;
-                    if (rel > 0) state <= STATE_RELEASE;
+                    if (rel > 0) 
+                        state <= STATE_RELEASE;
                 end
                 
-                // ---------- RELEASE STATE ----------
+                // --------- RELEASE ---------
                 STATE_RELEASE: begin
-                    if (counter < rel) begin
-                        counter <= counter + 1;
+                    if (release_counter < {rel, 8'd0}) begin
+                        release_counter <= release_counter + 1;
+                        amplitude <= amplitude - 1;
                     end else begin
-                        counter <= 0;
-                        if (amplitude > 0)
-                            amplitude <= amplitude - 1;
-                        else
-                            amplitude <= 8'd0;
-                        if (amplitude == 0) 
-                            state <= STATE_IDLE;
+                        release_counter <= 16'd0;
+                        state <= STATE_IDLE;
                     end
                 end
                 
@@ -584,7 +636,6 @@ module adsr_generator (
     end
 
 endmodule
-
 
 
 
