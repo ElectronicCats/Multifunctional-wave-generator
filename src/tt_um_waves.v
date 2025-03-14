@@ -183,7 +183,6 @@ module uart_receiver (
     reg [7:0] received_byte;
     reg [2:0] bit_count;
     reg receiving;
-    uart_state_t state;  // Change this line to use the uart_state_t enum
 
     // Temporary register for frequency selection
     reg [5:0] temp_freq;
@@ -194,6 +193,8 @@ module uart_receiver (
         RECEIVING  = 2'b01,
         PROCESSING = 2'b10
     } uart_state_t;
+
+    uart_state_t state;  // Change this line to use the uart_state_t enum
 
     // Start Bit Detection
     reg rx_last;
