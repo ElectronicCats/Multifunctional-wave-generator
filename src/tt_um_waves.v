@@ -522,38 +522,60 @@ module adsr_generator (
             counter   <= 8'd0;
         end else if (ena) begin
             case (state)
+                // ---------- IDLE STATE ----------
                 STATE_IDLE: begin
                     amplitude <= 8'd0;
+                    counter   <= 8'd0;
                     if (attack > 0) state <= STATE_ATTACK;
                 end
                 
+                // ---------- ATTACK STATE ----------
                 STATE_ATTACK: begin
-                    if (amplitude + attack >= 255)
-                        amplitude <= 255;
-                    else
-                        amplitude <= amplitude + attack;
-                    if (amplitude >= 255) state <= STATE_DECAY;
+                    if (counter < attack) begin
+                        counter <= counter + 1;
+                    end else begin
+                        counter <= 0;
+                        if (amplitude < 255) 
+                            amplitude <= amplitude + 1;
+                        if (amplitude >= 255) 
+                            state <= STATE_DECAY;
+                    end
                 end
                 
+                // ---------- DECAY STATE ----------
                 STATE_DECAY: begin
-                    if (amplitude > sustain)
-                        amplitude <= amplitude - decay;
-                    else
-                        amplitude <= sustain;
-                    if (amplitude <= sustain) state <= STATE_SUSTAIN;
+                    if (counter < decay) begin
+                        counter <= counter + 1;
+                    end else begin
+                        counter <= 0;
+                        if (amplitude > sustain)
+                            amplitude <= amplitude - 1;
+                        else
+                            amplitude <= sustain;
+                        if (amplitude <= sustain) 
+                            state <= STATE_SUSTAIN;
+                    end
                 end
                 
+                // ---------- SUSTAIN STATE ----------
                 STATE_SUSTAIN: begin
                     amplitude <= sustain;
                     if (rel > 0) state <= STATE_RELEASE;
                 end
                 
+                // ---------- RELEASE STATE ----------
                 STATE_RELEASE: begin
-                    if (amplitude > rel)
-                        amplitude <= amplitude - rel;
-                    else
-                        amplitude <= 8'd0;
-                    if (amplitude == 0) state <= STATE_IDLE;
+                    if (counter < rel) begin
+                        counter <= counter + 1;
+                    end else begin
+                        counter <= 0;
+                        if (amplitude > 0)
+                            amplitude <= amplitude - 1;
+                        else
+                            amplitude <= 8'd0;
+                        if (amplitude == 0) 
+                            state <= STATE_IDLE;
+                    end
                 end
                 
                 default: state <= STATE_IDLE;
@@ -562,6 +584,7 @@ module adsr_generator (
     end
 
 endmodule
+
 
 
 
