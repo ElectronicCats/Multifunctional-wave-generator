@@ -29,7 +29,7 @@ module tt_um_waves (
     reg [20:0] clk_div;
     reg wave_clk;
     reg [5:0] prev_freq_select;
-    wire [20:0] uart_freq_divider;  // intermediate signal
+    wire [20:0] uart_freq_divider;
 
   
     // Phase accumulator for all waveforms
@@ -40,7 +40,7 @@ module tt_um_waves (
         if (!rst_n) begin
             phase_accum <= 8'd0;
         end else if (ena && freq_select != 6'b000000) begin
-            phase_accum <= phase_accum + {2'b00, freq_select} + 1; // Ensure a minimum increment
+            phase_accum <= phase_accum + {2'b00, freq_select} + 1;
             $display("Phase Accumulator Updated: %d, Freq Select: %b, Ena: %b", phase_accum, freq_select, ena);
         end
     end
@@ -51,7 +51,7 @@ module tt_um_waves (
         if (!rst_n) begin
             clk_div <= 0;
             wave_clk <= 0;
-        end else if (clk_div >= (freq_divider >> 1)) begin
+        end else if (clk_div >= (freq_divider >> 1) && freq_divider > 0) begin
             clk_div <= 0;
             wave_clk <= ~wave_clk;
         end else begin
@@ -62,11 +62,11 @@ module tt_um_waves (
     // Frequency Divider Assignment
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            prev_freq_select <= 6'b000001; // Force update at startup
-            freq_divider <= 21'd1915712;   // Default to C2 (65.41 Hz)
+            prev_freq_select <= 6'b000001;
+            freq_divider <= 21'd1915712;
         end else if (freq_select != prev_freq_select || prev_freq_select == 6'b000000) begin
             prev_freq_select <= freq_select;
-            freq_divider <= uart_freq_divider; // Use value from uart_receiver
+            freq_divider <= uart_freq_divider;
         end
     end
 
@@ -79,7 +79,7 @@ module tt_um_waves (
         .freq_select(freq_select),
         .wave_select(wave_select),
         .white_noise_en(white_noise_en),
-        .freq_divider(uart_freq_divider) // Use an intermediate wire
+        .freq_divider(uart_freq_divider)
     );
 
     // Encoders for ADSR
@@ -101,19 +101,18 @@ module tt_um_waves (
     // Select waveform output
     reg [7:0] selected_wave;
     always @(posedge clk or negedge rst_n) begin
-    if (!rst_n)
-        selected_wave <= 8'd128;  // 🔹 Default to a mid-level wave
-    else begin
-        case (wave_select)
-            3'b000: selected_wave <= tri_wave_out;
-            3'b001: selected_wave <= saw_wave_out;
-            3'b010: selected_wave <= sqr_wave_out;
-            3'b011: selected_wave <= sine_wave_out;
-            3'b100: selected_wave <= noise_out;
-            default: selected_wave <= 8'd128; // 🔹 Prevent undefined output
-        endcase
+        if (!rst_n) selected_wave <= 8'd128;
+        else begin
+            case (wave_select)
+                3'b000: selected_wave <= tri_wave_out;
+                3'b001: selected_wave <= saw_wave_out;
+                3'b010: selected_wave <= sqr_wave_out;
+                3'b011: selected_wave <= sine_wave_out;
+                3'b100: selected_wave <= noise_out;
+                default: selected_wave <= 8'd128;
+            endcase
+        end
     end
-end
 
 
 
@@ -134,8 +133,8 @@ end
     reg [7:0] scaled_wave;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            temp_wave   <= 16'd0;
-            scaled_wave <= 8'd0;
+            temp_wave <= 16'd0;
+            scaled_wave <= 8'd10;
         end else begin
             temp_wave <= (selected_wave * adsr_amplitude) >> 8;
             scaled_wave <= (temp_wave[15:8] > 8'd10) ? temp_wave[15:8] : 8'd10;
@@ -186,16 +185,17 @@ module uart_receiver (
     reg receiving;
     reg [1:0] state;
 
-    // Temporary registers for bitwidth management
+    // Temporary register for frequency selection
     reg [5:0] temp_freq;
 
     // State machine states
-    localparam IDLE       = 2'b00;
-    localparam RECEIVING  = 2'b01;
-    localparam PROCESSING = 2'b10;
+    typedef enum logic [1:0] {
+        IDLE       = 2'b00,
+        RECEIVING  = 2'b01,
+        PROCESSING = 2'b10
+    } uart_state_t;
 
-    // Default Frequency Selection
-    initial freq_select = 6'b001001; // A2 (110 Hz) Default
+    uart_state_t state;
 
     // Start Bit Detection
     reg rx_last;
@@ -255,9 +255,9 @@ module uart_receiver (
                         8'h57: wave_select <= 3'b011;  // 'W' -> Sine wave
                         default: begin
                             if (received_byte >= 8'h30 && received_byte <= 8'h39) begin
-                                temp_freq <= received_byte[5:0];
+                                temp_freq <= received_byte[5:0] & 6'b111111; // Ensure 6-bit width
                             end else if (received_byte >= 8'h41 && received_byte <= 8'h5A) begin
-                                temp_freq <= (received_byte - 8'h41) + 6'd10;
+                                temp_freq <= ((received_byte - 8'h41) + 6'd10) & 6'b111111; // Ensure 6-bit width
                             end else begin
                                 temp_freq <= 6'd5;
                             end
@@ -281,27 +281,20 @@ module uart_receiver (
                         6'b001001: freq_divider <= 21'd1136364;  // A2 (110.00 Hz)
                         6'b001010: freq_divider <= 21'd1075268;  // A#2/Bb2 (116.54 Hz)
                         6'b001011: freq_divider <= 21'd1017340;  // B2 (123.47 Hz)
-
-                        // Octave 3
                         6'b001100: freq_divider <= 21'd95786;    // C3 (130.81 Hz)
                         6'b001101: freq_divider <= 21'd90180;    // C#3/Db3 (138.59 Hz)
                         6'b001110: freq_divider <= 21'd85131;    // D3 (146.83 Hz)
                         6'b001111: freq_divider <= 21'd80357;    // D#3/Eb3 (155.56 Hz)
-
-                        // Default value
                         default: freq_divider <= 21'd284091;
                     endcase
 
                     state <= IDLE;
                 end
+                
+                default: state <= IDLE;
             endcase
         end
     end
-
-    // Lint off for unused bits
-    /* verilator lint_off UNUSEDSIGNAL */
-    wire unused_bits = received_byte[7:6];
-    /* verilator lint_on UNUSEDSIGNAL */
 
 endmodule
 
@@ -362,12 +355,16 @@ module i2s_transmitter (
             if (sck == 0) begin  
                 if (bit_counter == 0) begin
                     ws <= ~ws;  
-                    shift_reg <= ws ? {data, 8'd0} : {8'd0, data}; 
+                    shift_reg <= {data, 8'd0}; // Always load correct data
                 end else begin
                     shift_reg <= shift_reg << 1;
                 end
                 sd <= shift_reg[15];
-                bit_counter <= (bit_counter == 15) ? 0 : bit_counter + 1;
+
+                if (bit_counter == 15)
+                    bit_counter <= 0; // Ensure proper reset
+                else
+                    bit_counter <= bit_counter + 1;
             end
         end else begin
             sck <= 0;
@@ -452,7 +449,6 @@ endmodule
 
 
 
-
 module triangular_wave_generator (
     input  wire       ena,        
     input  wire       clk,        
@@ -463,12 +459,12 @@ module triangular_wave_generator (
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
-            wave_out <= 8'd0;  // 🔹 Fix: Ensure reset value is constant
+            wave_out <= 8'd128;  // Set to mid-level instead of zero
         else if (ena) begin
             wave_out <= phase[7] ? (8'd255 - ({1'b0, phase[6:0]} << 1)) : ({1'b0, phase[6:0]} << 1);
             $display("Triangular Wave: Phase = %d, Output = %d", phase, wave_out);
         end else begin
-            wave_out <= 8'd0; //Ensure output is always assigned
+            wave_out <= 8'd128; // Maintain mid-level when disabled
         end
     end
 endmodule
@@ -485,10 +481,13 @@ module sawtooth_wave_generator (
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
-            wave_out <= 8'd0;
+            wave_out <= 8'd128; // Start at mid-level
         else if (ena)
             wave_out <= phase; // Directly use phase as sawtooth wave
-      $display("Sawtooth Wave: Phase = %d, Output = %d", phase, wave_out);
+        else
+            wave_out <= 8'd128; // Maintain mid-level when disabled
+
+        $display("Sawtooth Wave: Phase = %d, Output = %d", phase, wave_out);
     end
 endmodule
 
