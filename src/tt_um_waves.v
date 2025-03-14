@@ -505,137 +505,59 @@ module adsr_generator (
 );
 
     // State Encoding
-    (* fsm_encoding = "one-hot" *) reg [3:0] state;
+    typedef enum logic [3:0] {
+        STATE_IDLE    = 4'b0000,
+        STATE_ATTACK  = 4'b0001,
+        STATE_DECAY   = 4'b0010,
+        STATE_SUSTAIN = 4'b0011,
+        STATE_RELEASE = 4'b0100
+    } adsr_state_t;
 
-    // Internal ADSR amplitude tracking
-    reg signed [7:0] next_amplitude;
+    adsr_state_t state;
     reg [7:0] counter;
 
-    // Define ADSR states
-    localparam STATE_IDLE    = 4'b0000;
-    localparam STATE_ATTACK  = 4'b0001;
-    localparam STATE_DECAY   = 4'b0010;
-    localparam STATE_SUSTAIN = 4'b0011;
-    localparam STATE_RELEASE = 4'b0100;
-
-    // -------------------------------
-    // COMBINATIONAL LOGIC BLOCK
-    // -------------------------------
-    always @* begin
-        case (state)
-            // -------------------------
-            // STATE_ATTACK
-            // -------------------------
-            STATE_ATTACK: begin
-                if (amplitude + attack > 255)
-                    next_amplitude = 255;
-                else
-                    next_amplitude = amplitude + attack;
-            end
-
-            // -------------------------
-            // STATE_DECAY
-            // -------------------------
-            STATE_DECAY: begin
-                if ((amplitude - decay) < sustain)
-                    next_amplitude = sustain;
-                else
-                    next_amplitude = (amplitude > decay) ? amplitude - decay : 0;
-            end
-
-            // -------------------------
-            // STATE_SUSTAIN
-            // -------------------------
-            STATE_SUSTAIN: begin
-                next_amplitude = sustain;
-            end
-
-            // -------------------------
-            // STATE_RELEASE
-            // -------------------------
-            STATE_RELEASE: begin
-                if ((amplitude - rel) > 0)
-                    next_amplitude = amplitude - rel;
-                else
-                    next_amplitude = 0;
-            end
-
-            // Default case added to avoid latches
-            default: next_amplitude = 8'd0;
-        endcase
-    end
-
-    // -------------------------------
-    // SEQUENTIAL LOGIC BLOCK
-    // -------------------------------
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            state      <= STATE_IDLE;
-            amplitude  <= 8'd0;
-            counter    <= 8'd0;
+            state     <= STATE_IDLE;
+            amplitude <= 8'd0;
+            counter   <= 8'd0;
         end else if (ena) begin
             case (state)
-                // -------------------------
-                // STATE_IDLE
-                // -------------------------
                 STATE_IDLE: begin
-                    if (counter == 8'd255) begin
-                        state   <= STATE_ATTACK;
-                        counter <= 8'd0;
-                    end else begin
-                        counter <= counter + 1;
-                    end
+                    amplitude <= 8'd0;
+                    if (attack > 0) state <= STATE_ATTACK;
                 end
-
-                // -------------------------
-                // STATE_ATTACK
-                // -------------------------
+                
                 STATE_ATTACK: begin
-                    amplitude <= next_amplitude;
-                    if (next_amplitude == 255) begin
-                        state <= STATE_DECAY;
-                    end
+                    if (amplitude + attack >= 255)
+                        amplitude <= 255;
+                    else
+                        amplitude <= amplitude + attack;
+                    if (amplitude >= 255) state <= STATE_DECAY;
                 end
-
-                // -------------------------
-                // STATE_DECAY
-                // -------------------------
+                
                 STATE_DECAY: begin
-                    amplitude <= next_amplitude;
-                    if (next_amplitude == sustain) begin
-                        state <= STATE_SUSTAIN;
-                    end
+                    if (amplitude > sustain)
+                        amplitude <= amplitude - decay;
+                    else
+                        amplitude <= sustain;
+                    if (amplitude <= sustain) state <= STATE_SUSTAIN;
                 end
-
-                // -------------------------
-                // STATE_SUSTAIN
-                // -------------------------
+                
                 STATE_SUSTAIN: begin
                     amplitude <= sustain;
-                    if (counter == 8'd255) begin
-                        state   <= STATE_RELEASE;
-                        counter <= 8'd0;
-                    end else begin
-                        counter <= counter + 1;
-                    end
+                    if (rel > 0) state <= STATE_RELEASE;
                 end
-
-                // -------------------------
-                // STATE_RELEASE
-                // -------------------------
+                
                 STATE_RELEASE: begin
-                    amplitude <= next_amplitude;
-                    if (next_amplitude == 0) begin
-                        state <= STATE_IDLE;
-                    end
+                    if (amplitude > rel)
+                        amplitude <= amplitude - rel;
+                    else
+                        amplitude <= 8'd0;
+                    if (amplitude == 0) state <= STATE_IDLE;
                 end
-
-                // Added default case to prevent latches
-                default: begin
-                    state     <= STATE_IDLE;
-                    amplitude <= 8'd0;
-                    counter   <= 8'd0;
-                end
+                
+                default: state <= STATE_IDLE;
             endcase
         end
     end
