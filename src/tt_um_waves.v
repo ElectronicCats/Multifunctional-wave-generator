@@ -545,17 +545,16 @@ endmodule
 
 
 module adsr_generator (
-    input  wire        ena,         // Enable signal
-    input  wire        clk,         // Clock signal
-    input  wire        rst_n,       // Reset signal (active low)
-    input  wire [7:0]  attack,      // Attack rate (8-bit resolution) from encoder
-    input  wire [7:0]  decay,       // Decay rate (8-bit resolution) from encoder
-    input  wire [7:0]  sustain,     // Sustain level (8-bit resolution) from encoder
-    input  wire [7:0]  rel,         // Release rate (8-bit resolution) from encoder
-    output reg  [7:0]  amplitude    // Output amplitude (8-bit)
+    input  wire        ena,        
+    input  wire        clk,        
+    input  wire        rst_n,      
+    input  wire [7:0]  attack,     
+    input  wire [7:0]  decay,      
+    input  wire [7:0]  sustain,    
+    input  wire [7:0]  rel,        
+    output reg  [7:0]  amplitude   
 );
 
-    // State Encoding
     typedef enum logic [2:0] {
         STATE_IDLE    = 3'b000,
         STATE_ATTACK  = 3'b001,
@@ -565,67 +564,63 @@ module adsr_generator (
     } adsr_state_t;
 
     adsr_state_t state;
-
-    // Internal registers for smooth transitions
-    reg [15:0] attack_counter;
-    reg [15:0] decay_counter;
-    reg [15:0] release_counter;
+    reg [15:0] counter;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            state            <= STATE_IDLE;
-            amplitude        <= 8'd0;
-            attack_counter   <= 16'd0;
-            decay_counter    <= 16'd0;
-            release_counter  <= 16'd0;
+            amplitude <= 8'd0;
+            counter   <= 16'd0;
+            state     <= STATE_IDLE;
         end else if (ena) begin
             case (state)
-                // --------- IDLE ---------
                 STATE_IDLE: begin
                     amplitude <= 8'd0;
-                    if (attack > 0) 
+                    if (attack != 0) begin  // Solo entra en ATTACK si attack > 0
                         state <= STATE_ATTACK;
-                end
-                
-                // --------- ATTACK ---------
-                STATE_ATTACK: begin
-                    if (attack_counter < {attack, 8'd0}) begin
-                        attack_counter <= attack_counter + 1;
-                        amplitude <= amplitude + 1;
-                    end else begin
-                        attack_counter <= 16'd0;
-                        state <= STATE_DECAY;
                     end
                 end
                 
-                // --------- DECAY ---------
+                STATE_ATTACK: begin
+                    if (amplitude < 8'd255) begin
+                        counter <= counter + 1;
+                      if (counter >= {8'b0, attack}) begin  // Incrementa amplitud cada "attack" ciclos
+                            amplitude <= amplitude + 1;
+                            counter <= 0;
+                        end
+                    end else begin
+                        state <= STATE_DECAY;
+                        counter <= 0;
+                    end
+                end
+                
                 STATE_DECAY: begin
                     if (amplitude > sustain) begin
-                        if (decay_counter < {decay, 8'd0}) begin
-                            decay_counter <= decay_counter + 1;
+                        counter <= counter + 1;
+                        if (counter >= {8'b0, decay}) begin   // Decrementa amplitud cada "decay" ciclos
                             amplitude <= amplitude - 1;
-                        end else begin
-                            decay_counter <= 16'd0;
+                            counter <= 0;
                         end
                     end else begin
                         state <= STATE_SUSTAIN;
                     end
                 end
                 
-                // --------- SUSTAIN ---------
                 STATE_SUSTAIN: begin
-                    amplitude <= sustain;
-                    if (rel > 0) 
+                    amplitude <= sustain;  // Mantiene nivel de sustain
+                    if (rel != 0) begin    // Transición a RELEASE solo si rel > 0
                         state <= STATE_RELEASE;
+                        counter <= 0;
+                    end
                 end
                 
-                // --------- RELEASE ---------
                 STATE_RELEASE: begin
-                    if (release_counter < {rel, 8'd0}) begin
-                        release_counter <= release_counter + 1;
-                        amplitude <= amplitude - 1;
+                    if (amplitude > 0) begin
+                        counter <= counter + 1;
+                        if (counter >= {8'b0, rel}) begin // Decrementa amplitud cada "rel" ciclos
+                            amplitude <= amplitude - 1;
+                            counter <= 0;
+                        end
                     end else begin
-                        release_counter <= 16'd0;
                         state <= STATE_IDLE;
                     end
                 end
@@ -634,7 +629,6 @@ module adsr_generator (
             endcase
         end
     end
-
 endmodule
 
 
