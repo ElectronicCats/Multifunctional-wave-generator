@@ -168,180 +168,165 @@ endmodule
 module uart_receiver (
     input wire clk,
     input wire rst_n,
-    input wire rx,                 // UART RX Input
-    output reg [5:0] freq_select,  // Frequency selection (0-63)
-    output reg [2:0] wave_select,  // Waveform selection (square, sine, etc.)
-    output reg white_noise_en,     // White noise enable
-    output reg [20:0] freq_divider // Frequency divider output
+    input wire rx,
+    output reg [5:0] freq_select,
+    output reg [2:0] wave_select,
+    output reg white_noise_en,
+    output reg [20:0] freq_divider
 );
 
-    // UART Parameters
     parameter BAUD_TICKS = 2604;
-
-    // Internal Registers
+    
     reg [31:0] baud_counter;
     reg [7:0] received_byte;
     reg [2:0] bit_count;
     reg receiving;
-
-    // Temporary register for frequency selection
     reg [5:0] temp_freq;
 
-    // State machine states
     typedef enum logic [1:0] {
         IDLE       = 2'b00,
         RECEIVING  = 2'b01,
         PROCESSING = 2'b10
     } uart_state_t;
 
-    uart_state_t state;  
+    uart_state_t state;
 
-    // Start Bit Detection
     reg rx_last;
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n)
-            rx_last <= 1'b1;
-        else
-            rx_last <= rx;
+        if (!rst_n) rx_last <= 1'b1;
+        else rx_last <= rx;
     end
-    wire start_bit = (rx_last == 1'b1 && rx == 1'b0);
+    wire start_bit = (rx_last && !rx);
 
-    // UART Receiver State Machine
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             received_byte   <= 8'd0;
             bit_count       <= 3'd0;
             receiving       <= 1'b0;
-            freq_select     <= 6'd9;  // A2
+            freq_select     <= 6'd9;
             wave_select     <= 3'd0;
             white_noise_en  <= 1'b0;
             freq_divider    <= 21'd1136364;
             state           <= IDLE;
             baud_counter    <= 0;
+            temp_freq       <= 6'd9;
         end else begin
             case (state)
                 IDLE: begin
                     if (start_bit && !receiving) begin
                         receiving <= 1'b1;
-                        bit_count <= 0;
-                        baud_counter <= 0;
                         state <= RECEIVING;
+                        baud_counter <= 0;
+                        bit_count <= 0;
                     end
                 end
 
                 RECEIVING: begin
-                    if (receiving) begin
-                        if (baud_counter == (BAUD_TICKS >> 1)) begin
-                            received_byte[bit_count] <= rx;
-                            if (bit_count < 3'd7) begin
-                                bit_count <= bit_count + 1;
-                            end else begin
-                                receiving <= 1'b0;
-                                state <= PROCESSING;
-                            end
+                    if (baud_counter == (BAUD_TICKS >> 1)) begin
+                        received_byte[bit_count] <= rx;
+                        if (bit_count < 3'd7) begin
+                            bit_count <= bit_count + 1;
+                        end else begin
+                            receiving <= 1'b0;
+                            state <= PROCESSING;
                         end
+                        baud_counter <= 0;
+                    end else begin
                         baud_counter <= baud_counter + 1;
                     end
                 end
 
                 PROCESSING: begin
+                    white_noise_en <= white_noise_en;
+                    wave_select <= wave_select;
+                    temp_freq <= temp_freq;
+
                     case (received_byte)
-                        8'h4E: white_noise_en <= 1'b1; // 'N' -> Enable white noise
-                        8'h46: white_noise_en <= 1'b0; // 'F' -> Disable white noise
-                        8'h54: wave_select <= 3'b000;  // 'T' -> Triangle wave
-                        8'h53: wave_select <= 3'b001;  // 'S' -> Sawtooth wave
-                        8'h51: wave_select <= 3'b010;  // 'Q' -> Square wave
-                        8'h57: wave_select <= 3'b011;  // 'W' -> Sine wave
-                        default: begin
-                            if (received_byte >= 8'h30 && received_byte <= 8'h39) begin
-                                temp_freq <= received_byte[5:0] & 6'b111111; // Ensure 6-bit value
-                            end else if (received_byte >= 8'h41 && received_byte <= 8'h5A) begin
-                                temp_freq <= 6'(received_byte - 8'h41 + 8'd10); 
-                            end else begin
-                                temp_freq <= 6'd5;
-                            end
-                        end
-                    endcase
+                        // Wave controls
+                        8'h4E: white_noise_en <= 1'b1;  // N
+                        8'h46: white_noise_en <= 1'b0;  // F
+                        8'h54: wave_select <= 3'b000;   // T
+                        8'h53: wave_select <= 3'b001;   // S
+                        8'h51: wave_select <= 3'b010;   // Q
+                        8'h57: wave_select <= 3'b011;   // W
 
-                    // Asignar frecuencia seleccionada
+                        // Full frequency mapping (adjusted to skip 8'h46)
+			8'h30: temp_freq <= 6'd0;   8'h31: temp_freq <= 6'd1;
+			8'h32: temp_freq <= 6'd2;   8'h33: temp_freq <= 6'd3;
+			8'h34: temp_freq <= 6'd4;   8'h35: temp_freq <= 6'd5;
+			8'h36: temp_freq <= 6'd6;   8'h37: temp_freq <= 6'd7;
+			8'h38: temp_freq <= 6'd8;   8'h39: temp_freq <= 6'd9;
+			8'h61: temp_freq <= 6'd10;  8'h62: temp_freq <= 6'd11;
+			8'h41: temp_freq <= 6'd12;  8'h42: temp_freq <= 6'd13;
+			8'h43: temp_freq <= 6'd14;  8'h44: temp_freq <= 6'd15;
+			8'h45: temp_freq <= 6'd16;  // 'E' (was 6'd16)
+			8'h47: temp_freq <= 6'd17;  // 'G' (now 6'd17 instead of 6'd18)
+			8'h48: temp_freq <= 6'd18;  8'h49: temp_freq <= 6'd19;
+			8'h4A: temp_freq <= 6'd20;  8'h4B: temp_freq <= 6'd21;
+			8'h4C: temp_freq <= 6'd22;  8'h4D: temp_freq <= 6'd23;
+			8'h4F: temp_freq <= 6'd24;  8'h50: temp_freq <= 6'd25;
+			8'h52: temp_freq <= 6'd26;  8'h55: temp_freq <= 6'd27;
+			8'h56: temp_freq <= 6'd28;  8'h58: temp_freq <= 6'd29;
+			8'h59: temp_freq <= 6'd30;  8'h5A: temp_freq <= 6'd31;
+			8'h5B: temp_freq <= 6'd32;  8'h5D: temp_freq <= 6'd33;
+			8'h5E: temp_freq <= 6'd34;  8'h63: temp_freq <= 6'd35;
+			8'h64: temp_freq <= 6'd36;  8'h65: temp_freq <= 6'd37;
+			8'h66: temp_freq <= 6'd38;  8'h67: temp_freq <= 6'd39;
+			8'h68: temp_freq <= 6'd40;  8'h69: temp_freq <= 6'd41;
+			8'h6A: temp_freq <= 6'd42;  8'h6B: temp_freq <= 6'd43;
+			8'h6C: temp_freq <= 6'd44;  8'h6D: temp_freq <= 6'd45;
+			8'h6E: temp_freq <= 6'd46;  8'h6F: temp_freq <= 6'd47;
+			8'h70: temp_freq <= 6'd48;  8'h71: temp_freq <= 6'd49;
+			8'h72: temp_freq <= 6'd50;  8'h73: temp_freq <= 6'd51;
+			8'h74: temp_freq <= 6'd52;  8'h75: temp_freq <= 6'd53;
+			8'h76: temp_freq <= 6'd54;  8'h77: temp_freq <= 6'd55;
+			8'h78: temp_freq <= 6'd56;  8'h79: temp_freq <= 6'd57;
+			8'h7A: temp_freq <= 6'd58; 
+
+			// Default case for remaining values
+			default: temp_freq <= 6'd9;   // Fallback to A2
+                    		endcase
+
                     freq_select <= temp_freq;
-
-                    // Asignar frecuencia del divisor
+                    
+                    // Complete frequency divider mapping
                     case (temp_freq)
-                        6'b000000: freq_divider <= 21'd1915712;  // C2 (65.41 Hz)
-       	                6'b000001: freq_divider <= 21'd1803586;  // C#2/Db2 (69.30 Hz)
-                        6'b000010: freq_divider <= 21'd1702624;  // D2 (73.42 Hz)
-                        6'b000011: freq_divider <= 21'd1607142;  // D#2/Eb2 (77.78 Hz)
-                        6'b000100: freq_divider <= 21'd1515152;  // E2 (82.41 Hz)
-                        6'b000101: freq_divider <= 21'd1431731;  // F2 (87.31 Hz)
-                        6'b000110: freq_divider <= 21'd1351351;  // F#2/Gb2 (92.50 Hz)
-                        6'b000111: freq_divider <= 21'd1275510;  // G2 (98.00 Hz)
-                        6'b001000: freq_divider <= 21'd1204819;  // G#2/Ab2 (103.83 Hz)
-                        6'b001001: freq_divider <= 21'd1136364;  // A2 (110.00 Hz)
-                        6'b001010: freq_divider <= 21'd1075268;  // A#2/Bb2 (116.54 Hz)
-                        6'b001011: freq_divider <= 21'd1017340;  // B2 (123.47 Hz)
-
-                        // Octave 3
-                        6'b001100: freq_divider <= 21'd95786;    // C3 (130.81 Hz)
-                        6'b001101: freq_divider <= 21'd90180;    // C#3/Db3 (138.59 Hz)
-                        6'b001110: freq_divider <= 21'd85131;    // D3 (146.83 Hz)
-                        6'b001111: freq_divider <= 21'd80357;    // D#3/Eb3 (155.56 Hz)
-                        6'b010000: freq_divider <= 21'd75758;    // E3 (164.81 Hz)
-                        6'b010001: freq_divider <= 21'd71586;    // F3 (174.61 Hz)
-                        6'b010010: freq_divider <= 21'd67567;    // F#3/Gb3 (185.00 Hz)
-                        6'b010011: freq_divider <= 21'd63775;    // G3 (196.00 Hz)
-                        6'b010100: freq_divider <= 21'd60241;    // G#3/Ab3 (207.65 Hz)
-                        6'b010101: freq_divider <= 21'd56818;    // A3 (220.00 Hz)
-                        6'b010110: freq_divider <= 21'd53763;    // A#3/Bb3 (233.08 Hz)
-                        6'b010111: freq_divider <= 21'd50867;    // B3 (246.94 Hz)
-
-                        // Octave 4
-                        6'b011000: freq_divider <= 21'd47878;    // C4 (261.63 Hz)
-                        6'b011001: freq_divider <= 21'd45090;    // C#4/Db4 (277.18 Hz)
-                        6'b011010: freq_divider <= 21'd42566;    // D4 (293.66 Hz)
-                        6'b011011: freq_divider <= 21'd40178;    // D#4/Eb4 (311.13 Hz)
-                        6'b011100: freq_divider <= 21'd37878;    // E4 (329.63 Hz)
-                        6'b011101: freq_divider <= 21'd35793;    // F4 (349.23 Hz)
-                        6'b011110: freq_divider <= 21'd33783;    // F#4/Gb4 (369.99 Hz)
-                        6'b011111: freq_divider <= 21'd31888;    // G4 (392.00 Hz)
-                        6'b100000: freq_divider <= 21'd30120;    // G#4/Ab4 (415.30 Hz)
-                        6'b100001: freq_divider <= 21'd28409;    // A4 (440.00 Hz)
-                        6'b100010: freq_divider <= 21'd26881;    // A#4/Bb4 (466.16 Hz)
-                        6'b100011: freq_divider <= 21'd25434;    // B4 (493.88 Hz)
-
-                        // Octave 5
-                        6'b100100: freq_divider <= 21'd23939;    // C5 (523.25 Hz)
-                        6'b100101: freq_divider <= 21'd22545;    // C#5/Db5 (554.37 Hz)
-                        6'b100110: freq_divider <= 21'd21283;    // D5 (587.33 Hz)
-                        6'b100111: freq_divider <= 21'd20089;    // D#5/Eb5 (622.25 Hz)
-                        6'b101000: freq_divider <= 21'd18938;    // E5 (659.25 Hz)
-                        6'b101001: freq_divider <= 21'd17896;    // F5 (698.46 Hz)
-                        6'b101010: freq_divider <= 21'd16891;    // F#5/Gb5 (739.99 Hz)
-                        6'b101011: freq_divider <= 21'd15944;    // G5 (783.99 Hz)
-                        6'b101100: freq_divider <= 21'd15060;    // G#5/Ab5 (830.61 Hz)
-                        6'b101101: freq_divider <= 21'd14204;    // A5 (880.00 Hz)
-                        6'b101110: freq_divider <= 21'd13441;    // A#5/Bb5 (932.33 Hz)
-                        6'b101111: freq_divider <= 21'd12717;    // B5 (987.77 Hz)
-
-                        // Octave 6
-                        6'b110000: freq_divider <= 21'd11969;    // C6 (1046.50 Hz)
-                        6'b110001: freq_divider <= 21'd11272;    // C#6/Db6 (1108.73 Hz)
-                        6'b110010: freq_divider <= 21'd10642;    // D6 (1174.66 Hz)
-                        6'b110011: freq_divider <= 21'd10044;    // D#6/Eb6 (1244.51 Hz)
-                        6'b110100: freq_divider <= 21'd9470;     // E6 (1318.51 Hz)
-                        6'b110101: freq_divider <= 21'd8948;     // F6 (1396.91 Hz)
-                        6'b110110: freq_divider <= 21'd8445;     // F#6/Gb6 (1479.98 Hz)
-                        6'b110111: freq_divider <= 21'd7972;     // G6 (1567.98 Hz)
-                        6'b111000: freq_divider <= 21'd7518;     // G#6/Ab6 (1661.22 Hz)
-                        6'b111001: freq_divider <= 21'd7090;     // A6 (1760.00 Hz)
-                        6'b111010: freq_divider <= 21'd6719;     // A#6/Bb6 (1864.66 Hz)
-                        6'b111011: freq_divider <= 21'd6358;     // B6 (1975.53 Hz)
-                        default: freq_divider <= 21'd284091;
+                        0:  freq_divider <= 21'd1915712;  1:  freq_divider <= 21'd1803586;
+                        2:  freq_divider <= 21'd1702624;  3:  freq_divider <= 21'd1607142;
+                        4:  freq_divider <= 21'd1515152;  5:  freq_divider <= 21'd1431731;
+                        6:  freq_divider <= 21'd1351351;  7:  freq_divider <= 21'd1275510;
+                        8:  freq_divider <= 21'd1204819;  9:  freq_divider <= 21'd1136364;
+                        10: freq_divider <= 21'd1075268; 11: freq_divider <= 21'd1017340;
+                        12: freq_divider <= 21'd95786;   13: freq_divider <= 21'd90180;
+                        14: freq_divider <= 21'd85131;   15: freq_divider <= 21'd80357;
+                        16: freq_divider <= 21'd75758;   17: freq_divider <= 21'd71586;
+                        18: freq_divider <= 21'd67567;   19: freq_divider <= 21'd63775;
+                        20: freq_divider <= 21'd60241;   21: freq_divider <= 21'd56818;
+                        22: freq_divider <= 21'd53763;   23: freq_divider <= 21'd50867;
+                        24: freq_divider <= 21'd47878;   25: freq_divider <= 21'd45090;
+                        26: freq_divider <= 21'd42566;   27: freq_divider <= 21'd40178;
+                        28: freq_divider <= 21'd37878;   29: freq_divider <= 21'd35793;
+                        30: freq_divider <= 21'd33783;   31: freq_divider <= 21'd31888;
+                        32: freq_divider <= 21'd30120;   33: freq_divider <= 21'd28409;
+                        34: freq_divider <= 21'd26881;   35: freq_divider <= 21'd25434;
+                        36: freq_divider <= 21'd23939;   37: freq_divider <= 21'd22545;
+                        38: freq_divider <= 21'd21283;   39: freq_divider <= 21'd20089;
+                        40: freq_divider <= 21'd18938;   41: freq_divider <= 21'd17896;
+                        42: freq_divider <= 21'd16891;   43: freq_divider <= 21'd15944;
+                        44: freq_divider <= 21'd15060;   45: freq_divider <= 21'd14204;
+                        46: freq_divider <= 21'd13441;   47: freq_divider <= 21'd12717;
+                        48: freq_divider <= 21'd11969;   49: freq_divider <= 21'd11272;
+                        50: freq_divider <= 21'd10642;   51: freq_divider <= 21'd10044;
+                        52: freq_divider <= 21'd9470;    53: freq_divider <= 21'd8948;
+                        54: freq_divider <= 21'd8445;    55: freq_divider <= 21'd7972;
+                        56: freq_divider <= 21'd7518;    57: freq_divider <= 21'd7090;
+                        58: freq_divider <= 21'd6719;    59: freq_divider <= 21'd6358;
+                        default: freq_divider <= 21'd1136364;
                     endcase
 
                     state <= IDLE;
                 end
-                
+
                 default: state <= IDLE;
             endcase
         end
@@ -434,69 +419,73 @@ module cordic_sine_generator (
     input  wire clk,
     input  wire rst_n,
     input  wire ena,
-    input  wire [7:0] phase,
-    output reg  [7:0] sine_out
+    input  wire [7:0] phase,  // 8-bit phase input (0-255)
+    output reg  [7:0] sine_out // 8-bit output (0-255 centered at 128)
 );
 
+    // CORDIC parameters
     reg signed [15:0] x, y, z;
-    reg [3:0] i; 
-    reg signed [15:0] atan_value; 
+    reg [3:0] i; // Iteration counter (0-7)
+    reg signed [15:0] atan_value;
 
-    // CORDIC arctangent lookup table for 8 angles
-    localparam signed [15:0] atan_table_0 = 16'h3243;
-    localparam signed [15:0] atan_table_1 = 16'h1DAC;
-    localparam signed [15:0] atan_table_2 = 16'h0FAB;
-    localparam signed [15:0] atan_table_3 = 16'h07F5;
-    localparam signed [15:0] atan_table_4 = 16'h03FE;
-    localparam signed [15:0] atan_table_5 = 16'h01FF;
-    localparam signed [15:0] atan_table_6 = 16'h00FF;
-    localparam signed [15:0] atan_table_7 = 16'h007F;
+    // CORDIC gain compensation (1/1.64676 ≈ 0.60725 in Q1.15)
+    localparam signed [15:0] CORDIC_GAIN = 16'h4DB4; // 0.60725 * 32767 ≈ 19912
 
-    // Select atan value based on index
+    // Arctangent table (atan(2^-i) in Q1.15 format)
+    localparam signed [15:0] atan_table[0:7] = '{
+        16'h6488, // i=0: atan(1)   = π/4  ≈ 25736 (0.7854 rad)
+        16'h3B52, // i=1: atan(0.5) ≈ 15186 (0.4636 rad)
+        16'h1F5B, // i=2: atan(0.25)
+        16'h0FEB, // i=3: atan(0.125)
+        16'h07FD, // i=4: atan(0.0625)
+        16'h03FF, // i=5: atan(0.03125)
+        16'h01FF, // i=6: atan(0.015625)
+        16'h00FF  // i=7: atan(0.0078125)
+    };
+
+    // Phase scaling: 8-bit phase → 16-bit angle (0-2π)
+    wire signed [15:0] phase_scaled = {phase, 8'b0}; // Multiply by 256
+
+    // Arctangent lookup
     always @(*) begin
-        case (i[2:0]) 
-            3'b000: atan_value = atan_table_0;
-            3'b001: atan_value = atan_table_1;
-            3'b010: atan_value = atan_table_2;
-            3'b011: atan_value = atan_table_3;
-            3'b100: atan_value = atan_table_4;
-            3'b101: atan_value = atan_table_5;
-            3'b110: atan_value = atan_table_6;
-            3'b111: atan_value = atan_table_7;
-            default: atan_value = 16'd0;
-        endcase
+        atan_value = atan_table[i[2:0]]; // Select based on iteration
     end
 
-    // CORDIC processing
+    // Main CORDIC processing
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            x <= 16'h4000;   // Start with normalized x = 1.0
-            y <= 16'd0;      // y = 0.0
-            z <= 16'd0;      // Phase angle starts at 0
-            i <= 4'b0000;    // Reset the iteration counter
+            // Reset initialization
+            x <= CORDIC_GAIN;
+            y <= 16'd0;
+            z <= 16'd0;
+            i <= 4'd0;
+            sine_out <= 8'd128; // Midpoint
         end else if (ena) begin
-            if (i == 4'b0000) begin
-                z <= {phase, 8'b0};  // Set phase input directly (without shifting)
+            if (i == 0) begin
+                // Load new phase angle every 8 cycles
+                z <= phase_scaled;
             end
 
-            if (i < 4'b1000) begin
-                // Perform the CORDIC iteration
-                if (z[15]) begin
+            if (i < 8) begin
+                // CORDIC iteration
+                if (z[15]) begin // Negative angle
                     x <= x + (y >>> i);
                     y <= y - (x >>> i);
-                    z <= z - atan_value;
-                end else begin
+                    z <= z + atan_value;
+                end else begin  // Positive angle
                     x <= x - (y >>> i);
                     y <= y + (x >>> i);
-                    z <= z + atan_value;
+                    z <= z - atan_value;
                 end
                 i <= i + 1;
             end else begin
-                // Output the sine value (normalized to 8 bits)
-                sine_out <= y[15:8];  // Take the upper 8 bits of y for sine output
+                // Convert to 8-bit unsigned (0-255)
+                sine_out <= (y[15:8] + 8'h80); // Signed→unsigned conversion
+                i <= 4'd0; // Reset for next calculation
             end
         end
     end
+
 endmodule
 
 
@@ -592,7 +581,7 @@ module adsr_generator (
                         counter <= 0;
                     end
                 end
-                
+                 
                 STATE_DECAY: begin
                     if (amplitude > sustain) begin
                         counter <= counter + 1;
@@ -653,45 +642,44 @@ endmodule
 
 
 
-
 module encoder #(
-    parameter integer WIDTH = 8,              // Counter width
-    parameter integer INCREMENT = 1,          // Increment value (must be integer)
-    parameter integer MAX_VALUE = (1 << WIDTH)-1, // Max value (e.g., 255 for 8-bit)
-    parameter integer MIN_VALUE = 0           // Min value
+    parameter integer WIDTH = 8,
+    parameter integer INCREMENT = 1,
+    parameter integer MAX_VALUE = (1 << WIDTH)-1,
+    parameter integer MIN_VALUE = 0
 )(
-    input wire ena,       
-    input wire clk,       
-    input wire rst_n,     
-    input wire a,         
-    input wire b,         
-    output reg [WIDTH-1:0] value  
+    input wire ena,
+    input wire clk,
+    input wire rst_n,
+    input wire a,
+    input wire b,
+    output reg [WIDTH-1:0] value
 );
 
     reg old_a, old_b;
-
-    wire [3:0] transition;
-    assign transition = {a, old_a, b, old_b}; 
+    wire [3:0] transition = {old_a, a, old_b, b}; // Fixed order
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             old_a <= 1'b0;
             old_b <= 1'b0;
-            value <= {WIDTH{1'b0}};
+            value <= MIN_VALUE[WIDTH-1:0]; // Bit-slice instead of cast
         end else if (ena) begin
             old_a <= a;
             old_b <= b;
 
             case (transition)
-                4'b1000, 4'b0110, 4'b0011, 4'b1101: begin
-                    if (value < MAX_VALUE[WIDTH-1:0]) // Size MAX_VALUE to match value width
-                        value <= value + INCREMENT[WIDTH-1:0]; // Explicitly size INCREMENT
-                end
-                4'b0001, 4'b1011, 4'b1110, 4'b0100: begin
-                    if (value > MIN_VALUE[WIDTH-1:0]) // Size MIN_VALUE to match value width
-                        value <= value - INCREMENT[WIDTH-1:0]; // Explicitly size INCREMENT
-                end
-                default: value <= value; 
+                // Clockwise (A leads B)
+                4'b0001, 4'b0111, 4'b1110, 4'b1000: 
+                    if (value < MAX_VALUE[WIDTH-1:0])
+                        value <= value + INCREMENT[WIDTH-1:0];
+
+                // Counter-clockwise (B leads A)
+                4'b0010, 4'b1011, 4'b1101, 4'b0100: 
+                    if (value > MIN_VALUE[WIDTH-1:0])
+                        value <= value - INCREMENT[WIDTH-1:0];
+
+                default: value <= value;
             endcase
         end
     end
