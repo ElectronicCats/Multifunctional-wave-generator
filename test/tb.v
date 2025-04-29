@@ -11,149 +11,141 @@ module tb;
   reg clk = 0;
   always #20 clk = ~clk;
 
+  // Reset and Enable Signals
   reg rst_n;
   reg ena;
+  
+  // DUT I/O
   reg [7:0] ui_in = 0;
   reg [7:0] uio_in = 0;
   wire [7:0] uo_out;
   wire [7:0] uio_out;
   wire [7:0] uio_oe;
 
+  // I2S Interface Monitoring
   wire i2s_sck = uo_out[0];
   wire i2s_ws  = uo_out[1];
   wire i2s_sd  = uo_out[2];
+  reg [15:0] captured_data;
 
-  // DUT Instantiation
+  // Instantiate DUT
   tt_um_waves dut (
-      .ui_in  (ui_in),
-      .uo_out (uo_out),
-      .uio_in (uio_in),
-      .uio_out(uio_out),
-      .uio_oe (uio_oe),
-      .ena    (ena),
-      .clk    (clk),
-      .rst_n  (rst_n)
+    .ui_in(ui_in),
+    .uo_out(uo_out),
+    .uio_in(uio_in),
+    .uio_out(uio_out),
+    .uio_oe(uio_oe),
+    .ena(ena),
+    .clk(clk),
+    .rst_n(rst_n)
   );
 
-  // Reset & Enable Sequence
+  // Reset and Enable Initialization
   initial begin
     rst_n = 0;
     ena = 0;
-    #500;  // Reset duration
-    rst_n = 1;
-    #200;  // Stabilization
-    ena = 1;    
-    $display("[TB] Reset complete");
+    #500 rst_n = 1;
+    #200 ena = 1;
+    $display("[TB] System Enabled");
   end
 
   // UART Transmission Task
   task uart_send(input [7:0] data);
     integer i;
     begin
-      $display("[TB] Sending UART: 0x%h (%s)", data, get_wave_name(data));
-      ui_in[0] <= 0;  // Start bit
-      repeat (2604) @(posedge clk);
-
+      ui_in[0] = 1'b1;  // Idle state
+      #100000;
+      
+      // Start bit
+      ui_in[0] = 1'b0;
+      #104160;
+      
+      // Data bits
       for (i = 0; i < 8; i = i + 1) begin
-        ui_in[0] <= data[i];
-        repeat (2604) @(posedge clk);
+        ui_in[0] = data[i];
+        #104160;
       end
-
-      ui_in[0] <= 1;  // Stop bit
-      repeat (2604) @(posedge clk);
+      
+      // Stop bit
+      ui_in[0] = 1'b1;
+      #104160;
+      $display("[TB] Sent UART: 0x%h", data);
     end
   endtask
 
-  // Return waveform name for debug
-  function string get_wave_name(input [7:0] data);
-    case(data)
-      8'h54: return "Triangle";
-      8'h53: return "Sawtooth";
-      8'h51: return "Square";
-      8'h57: return "Sine";
-      8'h4E: return "Noise ON";
-      8'h46: return "Noise OFF";
-      default: return "Frequency";
-    endcase
-  endfunction
-
-  // Improved Encoder Rotation Task
+  // Encoder Simulation Task
   task rotate_encoder(input [1:0] encoder_id, input integer steps);
-    integer i, j;
-    reg [1:0] pins;
+    integer i;
+    reg [1:0] base_pin;
     begin
-      pins = encoder_id * 2; // Calculate pin pair
-      $display("[TB] Rotating encoder %0d (%0d steps)", encoder_id, steps);
-      
-      for (j = 0; j < steps; j = j + 1) begin
-        // Clockwise rotation sequence
-        uio_in[pins +: 2] = 2'b00; #100;
-        uio_in[pins +: 2] = 2'b01; #100;
-        uio_in[pins +: 2] = 2'b11; #100;
-        uio_in[pins +: 2] = 2'b10; #100;
+      base_pin = encoder_id * 2;
+      for (i = 0; i < steps; i = i + 1) begin
+        // Clockwise rotation pattern
+        uio_in[base_pin +: 2] = 2'b00; #400;
+        uio_in[base_pin +: 2] = 2'b01; #400;
+        uio_in[base_pin +: 2] = 2'b11; #400;
+        uio_in[base_pin +: 2] = 2'b10; #400;
       end
+      $display("[TB] Encoder %0d rotated %0d steps", encoder_id, steps);
     end
   endtask
 
   // I2S Data Capture
-  reg [15:0] captured_data;
   always @(negedge i2s_ws) begin
     captured_data <= 16'h0000;
-    fork
-      begin
-        for (int bitnum = 15; bitnum >= 0; bitnum--) begin
-          @(negedge i2s_sck);
-          captured_data[bitnum] <= i2s_sd;
-        end
-        $display("[TB] I2S Data: 0x%h (Scaled: %0d)", 
-          captured_data, captured_data[15:8]);
-      end
-    join_none
+    for (int i = 15; i >= 0; i--) begin
+      @(negedge i2s_sck);
+      captured_data[i] <= i2s_sd;
+    end
+    $display("[I2S] Captured: 0x%h (%0d)", captured_data, captured_data[15:8]);
   end
 
   // Main Test Sequence
   initial begin
-    #1500;  // Post-reset delay
+    // Wait for initialization
+    #1500;
 
-    // Test ADSR controls
-    $display("\n=== Testing ADSR Encoders ===");
+    // Test ADSR Controls
+    $display("\nTesting ADSR Parameters");
     rotate_encoder(0, 5);  // Attack
     rotate_encoder(1, 3);  // Decay
     rotate_encoder(2, 8);  // Sustain
     rotate_encoder(3, 4);  // Release
-    #2000;
+    #10000;
 
-    // Test All Waveforms
-    $display("\n=== Testing Waveforms ===");
+    // Waveform Tests
+    $display("\nTesting Waveform Selection");
     uart_send(8'h54);  // Triangle
-    uart_send(8'h5B);  // A4 (440Hz)
-    #10000;
-
-    uart_send(8'h53);  // Sawtooth
-    #10000;
-
-    uart_send(8'h51);  // Square
-    #10000;
-
-    uart_send(8'h57);  // Sine
-    #10000;
-
-    uart_send(8'h4E);  // Noise ON
-    #10000;
-    uart_send(8'h46);  // Noise OFF
-    #5000;
-
-    // Test Frequency Range
-    $display("\n=== Testing Frequencies ===");
-    uart_send(8'h30);  // C2
-    #5000;
     uart_send(8'h5B);  // A4
-    #5000;
-    uart_send(8'h7A);  // B6
-    #5000;
+    #20000;
+    
+    uart_send(8'h53);  // Sawtooth
+    #20000;
+    
+    uart_send(8'h51);  // Square
+    #20000;
+    
+    uart_send(8'h57);  // Sine
+    #20000;
 
-    // Final check
-    $display("\n[TB] All tests completed");
+    // Noise Test
+    uart_send(8'h4E);  // Noise ON
+    #20000;
+    uart_send(8'h46);  // Noise OFF
+    #10000;
+
+    // Frequency Range Test
+    $display("\nTesting Frequency Range");
+    uart_send(8'h30);  // C2
+    #10000;
+    uart_send(8'h5B);  // A4
+    #10000;
+    uart_send(8'h7A);  // B6
+    #10000;
+
+    // Test Completion
+    #5000;
+    $display("\n[TB] All Tests Completed");
     $finish;
   end
 
