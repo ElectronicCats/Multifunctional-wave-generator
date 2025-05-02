@@ -413,81 +413,77 @@ module i2s_transmitter (
 endmodule
 
 
-
-
 module cordic_sine_generator (
     input  wire clk,
     input  wire rst_n,
     input  wire ena,
-    input  wire [7:0] phase,  // 8-bit phase input (0-255)
-    output reg  [7:0] sine_out // 8-bit output (0-255 centered at 128)
+    input  wire [7:0] phase,
+    output reg  [7:0] sine_out
 );
 
-    // CORDIC parameters
+    // Internal CORDIC registers
     reg signed [15:0] x, y, z;
-    reg [3:0] i; // Iteration counter (0-7)
+    reg [3:0] i;
     reg signed [15:0] atan_value;
 
-    // CORDIC gain compensation (1/1.64676 ≈ 0.60725 in Q1.15)
-    localparam signed [15:0] CORDIC_GAIN = 16'h4DB4; // 0.60725 * 32767 ≈ 19912
+    // CORDIC gain compensation
+    localparam signed [15:0] CORDIC_GAIN = 16'h4DB4;
 
-    // Arctangent table (atan(2^-i) in Q1.15 format)
-    localparam signed [15:0] atan_table[0:7] = '{
-        16'h6488, // i=0: atan(1)   = π/4  ≈ 25736 (0.7854 rad)
-        16'h3B52, // i=1: atan(0.5) ≈ 15186 (0.4636 rad)
-        16'h1F5B, // i=2: atan(0.25)
-        16'h0FEB, // i=3: atan(0.125)
-        16'h07FD, // i=4: atan(0.0625)
-        16'h03FF, // i=5: atan(0.03125)
-        16'h01FF, // i=6: atan(0.015625)
-        16'h00FF  // i=7: atan(0.0078125)
-    };
+    // Arctangent table (Verilog-2001 compliant)
+    reg signed [15:0] atan_table [0:7];
 
-    // Phase scaling: 8-bit phase → 16-bit angle (0-2π)
-    wire signed [15:0] phase_scaled = {phase, 8'b0}; // Multiply by 256
+    // Initialize arctangent table values
+    initial begin
+        atan_table[0] = 16'h2000;  // π/4
+        atan_table[1] = 16'h12E4;  // atan(1/2)
+        atan_table[2] = 16'h09FB;  // atan(1/4)
+        atan_table[3] = 16'h0511;  // atan(1/8)
+        atan_table[4] = 16'h028A;  // atan(1/16)
+        atan_table[5] = 16'h0145;  // atan(1/32)
+        atan_table[6] = 16'h00A3;  // atan(1/64)
+        atan_table[7] = 16'h0051;  // atan(1/128)
+    end
+
+    // Phase scaling
+    wire signed [15:0] phase_scaled = {phase, 8'b0};
 
     // Arctangent lookup
     always @(*) begin
-        atan_value = atan_table[i[2:0]]; // Select based on iteration
+        atan_value = atan_table[i[2:0]];
     end
 
-    // Main CORDIC processing
+    // CORDIC processing
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            // Reset initialization
             x <= CORDIC_GAIN;
-            y <= 16'd0;
-            z <= 16'd0;
+            y <= 16'sd0;
+            z <= 16'sd0;
             i <= 4'd0;
-            sine_out <= 8'd128; // Midpoint
+            sine_out <= 8'd128;
         end else if (ena) begin
-            if (i == 0) begin
-                // Load new phase angle every 8 cycles
+            if (i == 4'd0) begin
                 z <= phase_scaled;
             end
 
-            if (i < 8) begin
-                // CORDIC iteration
-                if (z[15]) begin // Negative angle
-                    x <= x + (y >>> i);
-                    y <= y - (x >>> i);
+            if (i < 4'd8) begin
+                if (z[15]) begin
+                    x <= x + (y >>> i[2:0]);
+                    y <= y - (x >>> i[2:0]);
                     z <= z + atan_value;
-                end else begin  // Positive angle
-                    x <= x - (y >>> i);
-                    y <= y + (x >>> i);
+                end else begin
+                    x <= x - (y >>> i[2:0]);
+                    y <= y + (x >>> i[2:0]);
                     z <= z - atan_value;
                 end
                 i <= i + 1;
             end else begin
-                // Convert to 8-bit unsigned (0-255)
-                sine_out <= (y[15:8] + 8'h80); // Signed→unsigned conversion
-                i <= 4'd0; // Reset for next calculation
+                sine_out <= (y[15:8] + 8'h80);
+                i <= 4'd0;
             end
         end
     end
 
 endmodule
-
 
 
 module triangular_wave_generator (
