@@ -36,7 +36,7 @@ module tt_um_waves (
     reg [7:0] phase_accum;
 
     // Phase accumulator update with correct scaling 
-    always @(posedge clk or negedge rst_n) begin
+  always @(posedge wave_clk or negedge rst_n) begin
         if (!rst_n) begin
             phase_accum <= 8'd0;
         end else if (ena && freq_select != 6'b000000) begin
@@ -175,7 +175,7 @@ module uart_receiver (
     output reg [20:0] freq_divider
 );
 
-    parameter BAUD_TICKS = 2604;
+    parameter BAUD_TICKS = 2604; // 25MHz clock, 9600 baud
     
     reg [31:0] baud_counter;
     reg [7:0] received_byte;
@@ -206,7 +206,7 @@ module uart_receiver (
             freq_select     <= 6'd9;
             wave_select     <= 3'd0;
             white_noise_en  <= 1'b0;
-            freq_divider    <= 21'd1136364;
+            freq_divider    <= 21'd113636; // Initial value: F3# (185Hz)
             state           <= IDLE;
             baud_counter    <= 0;
             temp_freq       <= 6'd9;
@@ -250,78 +250,75 @@ module uart_receiver (
                         8'h51: wave_select <= 3'b010;   // Q
                         8'h57: wave_select <= 3'b011;   // W
 
-                        // Full frequency mapping (adjusted to skip 8'h46)
-			8'h30: temp_freq <= 6'd0;   8'h31: temp_freq <= 6'd1;
-			8'h32: temp_freq <= 6'd2;   8'h33: temp_freq <= 6'd3;
-			8'h34: temp_freq <= 6'd4;   8'h35: temp_freq <= 6'd5;
-			8'h36: temp_freq <= 6'd6;   8'h37: temp_freq <= 6'd7;
-			8'h38: temp_freq <= 6'd8;   8'h39: temp_freq <= 6'd9;
-			8'h61: temp_freq <= 6'd10;  8'h62: temp_freq <= 6'd11;
-			8'h41: temp_freq <= 6'd12;  8'h42: temp_freq <= 6'd13;
-			8'h43: temp_freq <= 6'd14;  8'h44: temp_freq <= 6'd15;
-			8'h45: temp_freq <= 6'd16;  // 'E' (was 6'd16)
-			8'h47: temp_freq <= 6'd17;  // 'G' (now 6'd17 instead of 6'd18)
-			8'h48: temp_freq <= 6'd18;  8'h49: temp_freq <= 6'd19;
-			8'h4A: temp_freq <= 6'd20;  8'h4B: temp_freq <= 6'd21;
-			8'h4C: temp_freq <= 6'd22;  8'h4D: temp_freq <= 6'd23;
-			8'h4F: temp_freq <= 6'd24;  8'h50: temp_freq <= 6'd25;
-			8'h52: temp_freq <= 6'd26;  8'h55: temp_freq <= 6'd27;
-			8'h56: temp_freq <= 6'd28;  8'h58: temp_freq <= 6'd29;
-			8'h59: temp_freq <= 6'd30;  8'h5A: temp_freq <= 6'd31;
-			8'h5B: temp_freq <= 6'd32;  8'h5D: temp_freq <= 6'd33;
-			8'h5E: temp_freq <= 6'd34;  8'h63: temp_freq <= 6'd35;
-			8'h64: temp_freq <= 6'd36;  8'h65: temp_freq <= 6'd37;
-			8'h66: temp_freq <= 6'd38;  8'h67: temp_freq <= 6'd39;
-			8'h68: temp_freq <= 6'd40;  8'h69: temp_freq <= 6'd41;
-			8'h6A: temp_freq <= 6'd42;  8'h6B: temp_freq <= 6'd43;
-			8'h6C: temp_freq <= 6'd44;  8'h6D: temp_freq <= 6'd45;
-			8'h6E: temp_freq <= 6'd46;  8'h6F: temp_freq <= 6'd47;
-			8'h70: temp_freq <= 6'd48;  8'h71: temp_freq <= 6'd49;
-			8'h72: temp_freq <= 6'd50;  8'h73: temp_freq <= 6'd51;
-			8'h74: temp_freq <= 6'd52;  8'h75: temp_freq <= 6'd53;
-			8'h76: temp_freq <= 6'd54;  8'h77: temp_freq <= 6'd55;
-			8'h78: temp_freq <= 6'd56;  8'h79: temp_freq <= 6'd57;
-			8'h7A: temp_freq <= 6'd58; 
-
-			// Default case for remaining values
-			default: temp_freq <= 6'd9;   // Fallback to A2
-                    		endcase
+                        // Full frequency mapping (59 frequencies)
+                        8'h30: temp_freq <= 6'd0;   8'h31: temp_freq <= 6'd1;
+                        8'h32: temp_freq <= 6'd2;   8'h33: temp_freq <= 6'd3;
+                        8'h34: temp_freq <= 6'd4;   8'h35: temp_freq <= 6'd5;
+                        8'h36: temp_freq <= 6'd6;   8'h37: temp_freq <= 6'd7;
+                        8'h38: temp_freq <= 6'd8;   8'h39: temp_freq <= 6'd9;
+                        8'h61: temp_freq <= 6'd10;  8'h62: temp_freq <= 6'd11;
+                        8'h41: temp_freq <= 6'd12;  8'h42: temp_freq <= 6'd13;
+                        8'h43: temp_freq <= 6'd14;  8'h44: temp_freq <= 6'd15;
+                        8'h45: temp_freq <= 6'd16;  8'h47: temp_freq <= 6'd17;
+                        8'h48: temp_freq <= 6'd18;  8'h49: temp_freq <= 6'd19;
+                        8'h4A: temp_freq <= 6'd20;  8'h4B: temp_freq <= 6'd21;
+                        8'h4C: temp_freq <= 6'd22;  8'h4D: temp_freq <= 6'd23;
+                        8'h4F: temp_freq <= 6'd24;  8'h50: temp_freq <= 6'd25;
+                        8'h52: temp_freq <= 6'd26;  8'h55: temp_freq <= 6'd27;
+                        8'h56: temp_freq <= 6'd28;  8'h58: temp_freq <= 6'd29;
+                        8'h59: temp_freq <= 6'd30;  8'h5A: temp_freq <= 6'd31;
+                        8'h5B: temp_freq <= 6'd32;  8'h5D: temp_freq <= 6'd33;
+                        8'h5E: temp_freq <= 6'd34;  8'h63: temp_freq <= 6'd35;
+                        8'h64: temp_freq <= 6'd36;  8'h65: temp_freq <= 6'd37;
+                        8'h66: temp_freq <= 6'd38;  8'h67: temp_freq <= 6'd39;
+                        8'h68: temp_freq <= 6'd40;  8'h69: temp_freq <= 6'd41;
+                        8'h6A: temp_freq <= 6'd42;  8'h6B: temp_freq <= 6'd43;
+                        8'h6C: temp_freq <= 6'd44;  8'h6D: temp_freq <= 6'd45;
+                        8'h6E: temp_freq <= 6'd46;  8'h6F: temp_freq <= 6'd47;
+                        8'h70: temp_freq <= 6'd48;  8'h71: temp_freq <= 6'd49;
+                        8'h72: temp_freq <= 6'd50;  8'h73: temp_freq <= 6'd51;
+                        8'h74: temp_freq <= 6'd52;  8'h75: temp_freq <= 6'd53;
+                        8'h76: temp_freq <= 6'd54;  8'h77: temp_freq <= 6'd55;
+                        8'h78: temp_freq <= 6'd56;  8'h79: temp_freq <= 6'd57;
+                        8'h7A: temp_freq <= 6'd58;  8'h5C: temp_freq <= 6'd59; // Added 59th frequency
+                        default: temp_freq <= 6'd9;   // Fallback to A2
+                    endcase
 
                     freq_select <= temp_freq;
                     
-                    // Complete frequency divider mapping
+                    // CORRECTED Frequency Divider Values (Original values / 10)
                     case (temp_freq)
-                        0:  freq_divider <= 21'd1915712;  1:  freq_divider <= 21'd1803586;
-                        2:  freq_divider <= 21'd1702624;  3:  freq_divider <= 21'd1607142;
-                        4:  freq_divider <= 21'd1515152;  5:  freq_divider <= 21'd1431731;
-                        6:  freq_divider <= 21'd1351351;  7:  freq_divider <= 21'd1275510;
-                        8:  freq_divider <= 21'd1204819;  9:  freq_divider <= 21'd1136364;
-                        10: freq_divider <= 21'd1075268; 11: freq_divider <= 21'd1017340;
-                        12: freq_divider <= 21'd95786;   13: freq_divider <= 21'd90180;
-                        14: freq_divider <= 21'd85131;   15: freq_divider <= 21'd80357;
-                        16: freq_divider <= 21'd75758;   17: freq_divider <= 21'd71586;
-                        18: freq_divider <= 21'd67567;   19: freq_divider <= 21'd63775;
-                        20: freq_divider <= 21'd60241;   21: freq_divider <= 21'd56818;
-                        22: freq_divider <= 21'd53763;   23: freq_divider <= 21'd50867;
-                        24: freq_divider <= 21'd47878;   25: freq_divider <= 21'd45090;
-                        26: freq_divider <= 21'd42566;   27: freq_divider <= 21'd40178;
-                        28: freq_divider <= 21'd37878;   29: freq_divider <= 21'd35793;
-                        30: freq_divider <= 21'd33783;   31: freq_divider <= 21'd31888;
-                        32: freq_divider <= 21'd30120;   33: freq_divider <= 21'd28409;
-                        34: freq_divider <= 21'd26881;   35: freq_divider <= 21'd25434;
-                        36: freq_divider <= 21'd23939;   37: freq_divider <= 21'd22545;
-                        38: freq_divider <= 21'd21283;   39: freq_divider <= 21'd20089;
-                        40: freq_divider <= 21'd18938;   41: freq_divider <= 21'd17896;
-                        42: freq_divider <= 21'd16891;   43: freq_divider <= 21'd15944;
-                        44: freq_divider <= 21'd15060;   45: freq_divider <= 21'd14204;
-                        46: freq_divider <= 21'd13441;   47: freq_divider <= 21'd12717;
-                        48: freq_divider <= 21'd11969;   49: freq_divider <= 21'd11272;
-                        50: freq_divider <= 21'd10642;   51: freq_divider <= 21'd10044;
-                        52: freq_divider <= 21'd9470;    53: freq_divider <= 21'd8948;
-                        54: freq_divider <= 21'd8445;    55: freq_divider <= 21'd7972;
-                        56: freq_divider <= 21'd7518;    57: freq_divider <= 21'd7090;
-                        58: freq_divider <= 21'd6719;    59: freq_divider <= 21'd6358;
-                        default: freq_divider <= 21'd1136364;
+                        0:  freq_divider <= 21'd191571;  1:  freq_divider <= 21'd180359;
+                        2:  freq_divider <= 21'd170262;  3:  freq_divider <= 21'd160714;
+                        4:  freq_divider <= 21'd151515;  5:  freq_divider <= 21'd143173;
+                        6:  freq_divider <= 21'd135135;  7:  freq_divider <= 21'd127551;
+                        8:  freq_divider <= 21'd120482;  9:  freq_divider <= 21'd113636;
+                        10: freq_divider <= 21'd107527; 11: freq_divider <= 21'd101734;
+                        12: freq_divider <= 21'd95786;  13: freq_divider <= 21'd90180;
+                        14: freq_divider <= 21'd85131;  15: freq_divider <= 21'd80357;
+                        16: freq_divider <= 21'd75758;  17: freq_divider <= 21'd71586;
+                        18: freq_divider <= 21'd67567;  19: freq_divider <= 21'd63775;
+                        20: freq_divider <= 21'd60241;  21: freq_divider <= 21'd56818;
+                        22: freq_divider <= 21'd53763;  23: freq_divider <= 21'd50867;
+                        24: freq_divider <= 21'd47878;  25: freq_divider <= 21'd45090;
+                        26: freq_divider <= 21'd42566;  27: freq_divider <= 21'd40178;
+                        28: freq_divider <= 21'd37878;  29: freq_divider <= 21'd35793;
+                        30: freq_divider <= 21'd33783;  31: freq_divider <= 21'd31888;
+                        32: freq_divider <= 21'd30120;  33: freq_divider <= 21'd28409;
+                        34: freq_divider <= 21'd26881;  35: freq_divider <= 21'd25434;
+                        36: freq_divider <= 21'd23939;  37: freq_divider <= 21'd22545;
+                        38: freq_divider <= 21'd21283;  39: freq_divider <= 21'd20089;
+                        40: freq_divider <= 21'd18938;  41: freq_divider <= 21'd17896;
+                        42: freq_divider <= 21'd16891;  43: freq_divider <= 21'd15944;
+                        44: freq_divider <= 21'd15060;  45: freq_divider <= 21'd14204;
+                        46: freq_divider <= 21'd13441;  47: freq_divider <= 21'd12717;
+                        48: freq_divider <= 21'd11969;  49: freq_divider <= 21'd11272;
+                        50: freq_divider <= 21'd10642;  51: freq_divider <= 21'd10044;
+                        52: freq_divider <= 21'd9470;   53: freq_divider <= 21'd8948;
+                        54: freq_divider <= 21'd8445;   55: freq_divider <= 21'd7972;
+                        56: freq_divider <= 21'd7518;   57: freq_divider <= 21'd7090;
+                        58: freq_divider <= 21'd6719;   59: freq_divider <= 21'd6358;
+                        default: freq_divider <= 21'd113636; // F3# fallback
                     endcase
 
                     state <= IDLE;
