@@ -1,74 +1,112 @@
-# SPDX-License-Identifier: MIT
-
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles, RisingEdge, Timer
-
-async def uart_send(dut, data):
-    """ Simulate sending a UART byte (8N1 format: 1 start bit, 8 data bits, 1 stop bit). """
-    dut._log.info(f"Sending UART byte: {chr(data)} ({data:#04x})")
-
-    # Start bit (low)
-    dut.ui_in.value = 0
-    await ClockCycles(dut.clk, 217)  # Adjusted for 115200 baud rate
-
-    # Send 8 data bits (LSB first)
-    for i in range(8):
-        dut.ui_in.value = (data >> i) & 1
-        await ClockCycles(dut.clk, 217)
-
-    # Stop bit (high)
-    dut.ui_in.value = 1
-    await ClockCycles(dut.clk, 217)
-
-    # Increased delay to allow UART processing (~4ms)
-    await ClockCycles(dut.clk, 100000)
+from cocotb.triggers import RisingEdge, FallingEdge, Timer
+from cocotb.utils import get_sim_time
 
 @cocotb.test()
 async def test_waveform_generation(dut):
-    """ Test UART commands, waveform selection, and I2S output verification. """
-
-    # Start clock (40ns period → 25 MHz)
-    cocotb.start_soon(Clock(dut.clk, 40, units="ns").start())
-
-    # Reset DUT
+    """Test waveform generation and ADSR functionality through I2S output"""
+    clock = Clock(dut.clk, 40, units="ns")  # 25MHz clock
+    cocotb.start_soon(clock.start())
+    
+    # Initialize
     dut.rst_n.value = 0
-    await ClockCycles(dut.clk, 500)  # Increased reset time
+    dut.ena.value = 0
+    dut.ui_in.value = 0xFF  # UART idle state
+    await Timer(100, units="ns")
+    
+    # Release reset
     dut.rst_n.value = 1
-    await ClockCycles(dut.clk, 500)  # Allow system to stabilize
+    dut.ena.value = 1
+    await Timer(1, units="us")
+    dut._log.info("System initialized")
 
-    dut.ena.value = 1  # Enable module
-    dut._log.info("Reset complete")
-
-    # Test UART: Select different waveforms and verify I2S output changes
-    wave_commands = {
-        'T': "Triangle",
-        'S': "Sawtooth",
-        'Q': "Square",
-        'W': "Sine"
+    # Test basic waveforms
+    waveforms = {
+        0x54: "Triangle",
+        0x53: "Sawtooth",
+        0x51: "Square",
+        0x57: "Sine"
     }
+    
+    for cmd, name in waveforms.items():
+        await test_waveform(dut, cmd, name)
+    
+    # Test ADSR envelope
+    await test_adsr_envelope(dut)
 
-    for cmd, name in wave_commands.items():
-        before_wave_select = dut.adsr_debug.value  # Read adsr_debug before command
-        await uart_send(dut, ord(cmd))
-        await ClockCycles(dut.clk, 500)  # Allow processing time
-        after_wave_select = dut.adsr_debug.value  # Read adsr_debug after command
+async def test_waveform(dut, cmd, name):
+    """Test individual waveform"""
+    dut._log.info(f"Testing {name} wave")
+    await send_uart(dut, cmd)
+    await Timer(20, units="us")  # Allow waveform change
+    
+    # Capture 10 samples
+    samples = [await capture_i2s_sample(dut) for _ in range(10)]
+    
+    # Basic validation
+    if name == "Square":
+        assert all(s in (0, 255) for s in samples), "Invalid square wave values"
+    else:
+        assert min(samples) > 10 and max(samples) < 245, f"{name} out of range"
 
-        dut._log.info(f"Checking adsr_debug after {name} command...")
-        dut._log.info(f"Before: {before_wave_select}, After: {after_wave_select}")
-        assert before_wave_select != after_wave_select, f"wave_select did not change after {name} command"
+async def test_adsr_envelope(dut):
+    """Test ADSR envelope stages"""
+    dut._log.info("Testing ADSR Envelope")
+    
+    # Reset to initial state
+    await send_uart(dut, 0x46)  # Noise OFF
+    await send_uart(dut, 0x54)  # Triangle wave
+    await send_uart(dut, 0x5B)  # A4 frequency
+    
+    # Test Attack phase
+    await rotate_encoder(dut, 0, 5)  # Increase attack
+    attack_samples = []
+    for _ in range(20):
+        attack_samples.append(await capture_i2s_sample(dut))
+        await Timer(1, units="us")
+    
+    # Verify amplitude increases
+    assert attack_samples[-1] > attack_samples[0], "Attack phase failed"
 
-        # Improved I2S monitoring
-        i2s_sd_frames = []
-        for _ in range(5):  # Capture multiple I2S frames
-            await RisingEdge(dut.uo_out[1])  # Sync on WS rising edge
-            frame_data = []
-            for _ in range(16):  # Capture 16-bit frame
-                await RisingEdge(dut.uo_out[0])  # Sync on SCK
-                frame_data.append(dut.uo_out[2])  # Capture SD bit
-            i2s_sd_frames.append(frame_data)
+async def send_uart(dut, data):
+    """Send UART command"""
+    # Start bit
+    dut.ui_in.value = 0x00
+    await Timer(104, units="us")
+    
+    # Data bits (LSB first)
+    for i in range(8):
+        dut.ui_in.value = (data >> i) & 0x01
+        await Timer(104, units="us")
+    
+    # Stop bit
+    dut.ui_in.value = 0x01
+    await Timer(104, units="us")
+    dut._log.info(f"Sent UART command: 0x{data:02X}")
 
-        dut._log.info(f"I2S Frames Captured for {name}: {i2s_sd_frames}")
-        assert any(sum(frame) > 0 for frame in i2s_sd_frames), f"I2S SD stuck at zero after {name} command"
+async def capture_i2s_sample(dut):
+    """Capture one I2S sample (16-bit)"""
+    await RisingEdge(dut.uo_out[1])  # Wait for WS edge
+    sample = 0
+    
+    # Capture 16 bits
+    for _ in range(16):
+        await FallingEdge(dut.uo_out[0])  # SCK falling edge
+        sample = (sample << 1) | dut.uo_out[2].value
+    
+    return sample >> 8  # Use upper 8 bits
 
-    dut._log.info("All tests passed successfully!")
+async def rotate_encoder(dut, encoder_id, steps):
+    """Simulate encoder rotation"""
+    base_pin = encoder_id * 2
+    for _ in range(steps):
+        # CW rotation pattern
+        dut.uio_in.value = (0b00 << base_pin)
+        await Timer(400, units="ns")
+        dut.uio_in.value = (0b01 << base_pin)
+        await Timer(400, units="ns")
+        dut.uio_in.value = (0b11 << base_pin)
+        await Timer(400, units="ns")
+        dut.uio_in.value = (0b10 << base_pin)
+        await Timer(400, units="ns")
