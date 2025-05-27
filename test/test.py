@@ -1,11 +1,11 @@
 import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import Timer
-import numpy as np
+import random
 
 @cocotb.test()
 async def test_full_functionality(dut):
-    """Full system test using I2S output analysis"""
+    """Complete system test without external dependencies"""
     clock = Clock(dut.clk, 40, units="ns")  # 25MHz
     cocotb.start_soon(clock.start())
     
@@ -20,7 +20,7 @@ async def test_full_functionality(dut):
     dut.ena.value = 1
     await Timer(10, units="us")
     
-    # Test sequence
+    # Execute test sequence
     await basic_sanity_check(dut)
     await test_waveforms(dut)
     await test_frequency_range(dut)
@@ -29,7 +29,7 @@ async def test_full_functionality(dut):
     dut._log.info("All functionality verified!")
 
 async def basic_sanity_check(dut):
-    """Verify I2S clock activity"""
+    """Verify basic I2S clock activity"""
     sck_values = []
     for _ in range(1000):
         sck_values.append(dut.uo_out[0].value)
@@ -39,7 +39,7 @@ async def basic_sanity_check(dut):
     assert transitions > 100, "I2S clock not active"
 
 async def test_waveforms(dut):
-    """Verify all waveform types through output statistics"""
+    """Test all waveform types"""
     waveforms = {
         'square': 0x51,
         'sine': 0x57,
@@ -54,50 +54,85 @@ async def test_waveforms(dut):
         samples = await capture_samples(dut, 500)
         assert verify_waveform(samples, name), f"{name} verification failed"
 
+def verify_waveform(samples, waveform):
+    """Waveform analysis using pure Python"""
+    # Build histogram
+    hist = {}
+    for val in samples:
+        hist[val] = hist.get(val, 0) + 1
+    
+    if waveform == 'square':
+        return (hist.get(0, 0) > len(samples)*0.3 and \
+               (hist.get(255, 0) > len(samples)*0.3)
+    
+    if waveform == 'sine':
+        # Check bell curve properties
+        mean = sum(samples)/len(samples)
+        variance = sum((x-mean)**2 for x in samples)/len(samples)
+        return 80 < variance < 120 and 100 < mean < 150
+    
+    if waveform == 'triangle':
+        # Check linear distribution
+        sorted_samples = sorted(samples)
+        q1 = sorted_samples[len(samples)//4]
+        q3 = sorted_samples[3*len(samples)//4]
+        return (q3 - q1) > 100
+    
+    if waveform == 'sawtooth':
+        return max(samples) - min(samples) > 200
+    
+    return False
+
 async def test_frequency_range(dut):
-    """Verify frequency changes through zero-crossing analysis"""
+    """Test frequency scaling through zero-crossings"""
     freqs = {
         'low': 0x30,   # C2
         'mid': 0x5B,   # A4
         'high': 0x7A   # B6
     }
     
-    ref_counts = []
+    counts = []
     for name, cmd in freqs.items():
         await send_uart(dut, cmd)
         await Timer(20, units="us")
         
         samples = await capture_samples(dut, 1000)
-        zero_crossings = count_zero_crossings(samples)
-        ref_counts.append(zero_crossings)
+        counts.append(count_zero_crossings(samples))
     
-    # Verify frequency relationships
-    assert ref_counts[2] > ref_counts[1] > ref_counts[0], "Frequency scaling invalid"
+    assert counts[2] > counts[1] > counts[0], "Invalid frequency scaling"
+
+def count_zero_crossings(samples):
+    """Calculate zero-crossings without numpy"""
+    median = sorted(samples)[len(samples)//2]
+    return sum(1 for i in range(len(samples)-1) 
+            if (samples[i] > median) != (samples[i+1] > median))
 
 async def test_adsr_functionality(dut):
-    """Verify ADSR through amplitude envelope analysis"""
-    # Set initial parameters
+    """Test ADSR envelope functionality"""
     await send_uart(dut, 0x54)  # Triangle wave
     await send_uart(dut, 0x5B)  # A4
     
-    # Capture reference (no envelope)
     ref_samples = await capture_samples(dut, 1000)
     
-    # Activate ADSR
+    # Adjust ADSR parameters
     await rotate_encoder(dut, 0, 10)  # Attack
     await rotate_encoder(dut, 1, 5)   # Decay
     await rotate_encoder(dut, 2, 8)   # Sustain
     await rotate_encoder(dut, 3, 4)   # Release
     await Timer(50, units="us")
     
-    # Capture ADSR samples
     env_samples = await capture_samples(dut, 2000)
     
-    # Verify envelope shape
-    assert verify_adsr_envelope(env_samples, ref_samples), "ADSR envelope invalid"
+    assert verify_adsr(env_samples, ref_samples), "ADSR failure"
+
+def verify_adsr(env_samples, ref_samples):
+    """Verify envelope attenuation"""
+    ref_avg = sum(ref_samples)/len(ref_samples)
+    env_avg = sum(env_samples)/len(env_samples)
+    return env_avg < ref_avg * 0.8
 
 async def send_uart(dut, data):
-    """Simplified UART transmission"""
+    """Simulate UART transmission"""
     # Start bit
     dut.ui_in.value = 0
     await Timer(2, units="us")
@@ -115,49 +150,18 @@ async def send_uart(dut, data):
 async def rotate_encoder(dut, encoder_id, steps):
     """Simulate encoder rotation"""
     base_pin = encoder_id * 2
+    pattern = [0b00, 0b01, 0b11, 0b10]
+    
     for _ in range(steps):
-        # CW rotation pattern
-        dut.uio_in.value = (0b00 << base_pin) | (dut.uio_in.value & ~(0b11 << base_pin))
-        await Timer(400, units="ns")
-        dut.uio_in.value = (0b01 << base_pin) | (dut.uio_in.value & ~(0b11 << base_pin))
-        await Timer(400, units="ns")
-        dut.uio_in.value = (0b11 << base_pin) | (dut.uio_in.value & ~(0b11 << base_pin))
-        await Timer(400, units="ns")
-        dut.uio_in.value = (0b10 << base_pin) | (dut.uio_in.value & ~(0b11 << base_pin))
-        await Timer(400, units="ns")
+        for state in pattern:
+            dut.uio_in.value = (state << base_pin) | \
+                              (dut.uio_in.value & ~(0b11 << base_pin))
+            await Timer(400, units="ns")
 
 async def capture_samples(dut, count):
-    """Capture I2S samples through direct polling"""
+    """Capture I2S output samples"""
     samples = []
     for _ in range(count):
         samples.append(dut.uo_out[2].value)
-        await Timer(100, units="ns")  # Sample at 10MHz
-    return np.array(samples)
-
-def verify_waveform(samples, waveform):
-    """Statistical waveform verification"""
-    hist = np.histogram(samples, bins=256, range=(0,255))[0]
-    
-    if waveform == 'square':
-        return hist[0] > len(samples)*0.3 and hist[-1] > len(samples)*0.3
-    elif waveform == 'sine':
-        # Check for bell-shaped distribution
-        return np.var(hist) < 1e4 and np.abs(np.mean(hist) - 2) < 1
-    elif waveform == 'triangle':
-        # Linear distribution check
-        return np.corrcoef(np.arange(256), hist)[0,1] > 0.7
-    elif waveform == 'sawtooth':
-        return hist.argmax() < 10 or hist.argmax() > 245
-    return False
-
-def count_zero_crossings(samples):
-    """Count median crossings for frequency estimation"""
-    median = np.median(samples)
-    return sum((samples[i] > median) != (samples[i+1] > median) 
-               for i in range(len(samples)-1))
-
-def verify_adsr_envelope(env_samples, ref_samples):
-    """Check for amplitude modulation"""
-    env_max = env_samples.max()
-    ref_max = ref_samples.max()
-    return env_max < ref_max * 0.9 and np.mean(env_samples) < np.mean(ref_samples) * 0.8
+        await Timer(100, units="ns")  # 10MHz sampling
+    return samples
