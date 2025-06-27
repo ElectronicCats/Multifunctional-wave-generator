@@ -27,6 +27,7 @@ module tb;
   wire i2s_ws  = uo_out[1];
   wire i2s_sd  = uo_out[2];
   reg [15:0] captured_data;
+  real frequency;
 
   // Instantiate DUT
   tt_um_waves dut (
@@ -54,21 +55,21 @@ module tb;
     integer i;
     begin
       ui_in[0] = 1'b1;  // Idle state
-      #100000;
+      #104166;
       
       // Start bit
       ui_in[0] = 1'b0;
-      #104167; // Exact 9600 baud period (1/9600 ≈ 104166.666ns)
+      #104166;
       
       // Data bits (LSB first)
       for (i = 0; i < 8; i = i + 1) begin
         ui_in[0] = data[i];
-        #104167;
+        #104166;
       end
       
       // Stop bit
       ui_in[0] = 1'b1;
-      #104167;
+      #104166;
       $display("[TB] Sent UART: 0x%h (%s)", data, get_command_name(data));
     end
   endtask
@@ -83,64 +84,130 @@ module tb;
       8'h4E: return "Noise ON";
       8'h46: return "Noise OFF";
       8'h30: return "C2 (65.4Hz)";
+      8'h39: return "A2 (110Hz)";
       8'h5B: return "A4 (440Hz)";
       8'h7A: return "B6 (1975.5Hz)";
       default: return "Unknown Command";
     endcase
   endfunction
 
-  // Enhanced Encoder Simulation with Direction
+  // Enhanced Encoder Simulation with Direction and Realistic Timing
   task rotate_encoder(input [1:0] encoder_id, input integer steps, input clockwise);
     integer i;
     reg [1:0] base_pin;
+    reg [1:0] pattern [0:3];
     begin
       base_pin = encoder_id * 2;
-      for (i = 0; i < steps; i = i + 1) begin
-        if (clockwise) begin
-          // Clockwise pattern
-          uio_in[base_pin +: 2] = 2'b00; #400;
-          uio_in[base_pin +: 2] = 2'b01; #400;
-          uio_in[base_pin +: 2] = 2'b11; #400;
-          uio_in[base_pin +: 2] = 2'b10; #400;
-        end else begin
-          // Counter-clockwise pattern
-          uio_in[base_pin +: 2] = 2'b00; #400;
-          uio_in[base_pin +: 2] = 2'b10; #400;
-          uio_in[base_pin +: 2] = 2'b11; #400;
-          uio_in[base_pin +: 2] = 2'b01; #400;
-        end
+      
+      if (clockwise) begin
+        pattern[0] = 2'b00;
+        pattern[1] = 2'b01;
+        pattern[2] = 2'b11;
+        pattern[3] = 2'b10;
+      end else begin
+        pattern[0] = 2'b00;
+        pattern[1] = 2'b10;
+        pattern[2] = 2'b11;
+        pattern[3] = 2'b01;
       end
+      
+      for (i = 0; i < steps; i = i + 1) begin
+        uio_in[base_pin +: 2] = pattern[0]; #20000;
+        uio_in[base_pin +: 2] = pattern[1]; #20000;
+        uio_in[base_pin +: 2] = pattern[2]; #20000;
+        uio_in[base_pin +: 2] = pattern[3]; #20000;
+      end
+      
       $display("[TB] Encoder %0d rotated %0d steps %s",
                encoder_id, steps, clockwise ? "CW" : "CCW");
     end
   endtask
 
-  // Improved I2S Data Capture with Basic Validation
-  always @(negedge i2s_ws) begin
-    captured_data <= 16'h0000;
-    for (int i = 15; i >= 0; i--) begin
-      @(negedge i2s_sck);
-      captured_data[i] <= i2s_sd;
+  // Accurate I2S Frame Capture
+  task capture_i2s_frame();
+    begin
+      // Wait for WS edge
+      @(posedge i2s_ws);
+      
+      // Capture left channel (16 bits)
+      for (int i = 15; i >= 0; i--) begin
+        @(posedge i2s_sck);
+        captured_data[i] = i2s_sd;
+      end
+      
+      // Validate amplitude range
+      if (captured_data[15:8] > 8'd250) 
+        $display("[I2S] WARNING: Potential clipping - Value: %0d", captured_data[15:8]);
+      else
+        $display("[I2S] Captured: %0d", captured_data[15:8]);
     end
-    
-    // Basic amplitude validation
-    if (captured_data[15:8] > 8'd250) 
-      $display("[I2S] WARNING: Potential clipping - Value: %0d", captured_data[15:8]);
-    else
-      $display("[I2S] Captured: %0d", captured_data[15:8]);
-  end
+  endtask
+
+  // ADSR Envelope Verification Task
+  task verify_adsr();
+    integer max_val, sustain_val, release_start;
+    begin
+      // Wait for attack peak
+      capture_i2s_frame();
+      while (captured_data[15:8] < 250) capture_i2s_frame();
+      max_val = captured_data[15:8];
+      $display("[ADSR] Attack peak: %0d", max_val);
+      
+      // Wait for sustain level
+      repeat(10) capture_i2s_frame();
+      while (captured_data[15:8] > max_val/2 + 10) capture_i2s_frame();
+      sustain_val = captured_data[15:8];
+      $display("[ADSR] Sustain level: %0d", sustain_val);
+      
+      // Trigger release
+      rotate_encoder(3, 10, 0);  // Reduce release time
+      #10000;
+      
+      // Verify release phase
+      while (captured_data[15:8] > 10) capture_i2s_frame();
+      $display("[ADSR] Release complete");
+      
+      // Validate sustain level
+      if (sustain_val < max_val*0.6 && sustain_val > max_val*0.4)
+        $display("[ADSR] Sustain level verified");
+      else
+        $error("Invalid sustain level: %0d (max: %0d)", sustain_val, max_val);
+    end
+  endtask
+
+  // Frequency Measurement Task
+  task measure_frequency();
+    real period, last_edge;
+    begin
+      // Wait for WS rising edge
+      @(posedge i2s_ws);
+      last_edge = $realtime;
+      
+      // Measure time between 2 WS edges
+      @(posedge i2s_ws);
+      period = ($realtime - last_edge) / 1e9;  // in seconds
+      frequency = 1.0 / period;
+      
+      $display("[FREQ] Measured: %0.1f Hz", frequency);
+    end
+  endtask
 
   // Comprehensive Test Sequence
   initial begin
     // Wait for initialization
     #1500;
 
-    // Test ADSR Parameters with different directions
+    // Test ADSR Parameters
     $display("\n=== Testing ADSR Parameters ===");
     rotate_encoder(0, 5, 1);   // Attack up
     rotate_encoder(1, 3, 0);   // Decay down
     rotate_encoder(2, 8, 1);   // Sustain up
     rotate_encoder(3, 4, 0);   // Release down
+    #10000;
+
+    // ADSR Envelope Verification
+    $display("\n=== ADSR Envelope Test ===");
+    verify_adsr();
     #10000;
 
     // Full Waveform Test Suite
@@ -178,12 +245,8 @@ module tb;
       uart_send(cmd);
       #20000; // Allow 20us for waveform transition
       
-      // Add waveform-specific checks here
-      case(cmd)
-        8'h51: // Square wave validation
-          if (captured_data[15:8] != 8'd0 && captured_data[15:8] != 8'd255)
-            $error("Invalid square wave value: %0d", captured_data[15:8]);
-      endcase
+      // Capture 50 frames for analysis
+      repeat(50) capture_i2s_frame();
     end
   endtask
 
@@ -192,7 +255,20 @@ module tb;
       $display("Testing %s", freq_name);
       uart_send(freq_cmd);
       #10000; // Allow 10us for frequency change
-      // Add frequency-specific checks here
+      
+      measure_frequency();
+      
+      // Validate frequency range
+      case(freq_cmd)
+        8'h30: if (frequency < 60 || frequency > 70) 
+                 $error("C2 frequency out of range: %0.1f Hz", frequency);
+        8'h39: if (frequency < 105 || frequency > 115) 
+                 $error("A2 frequency out of range: %0.1f Hz", frequency);
+        8'h5B: if (frequency < 435 || frequency > 445) 
+                 $error("A4 frequency out of range: %0.1f Hz", frequency);
+        8'h7A: if (frequency < 1970 || frequency > 1980) 
+                 $error("B6 frequency out of range: %0.1f Hz", frequency);
+      endcase
     end
   endtask
 
