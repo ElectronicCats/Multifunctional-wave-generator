@@ -398,20 +398,22 @@ module i2s_transmitter (
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            clk_div    <= 0;
-            sck        <= 0;
-            ws         <= 0;
-            sd         <= 0;
+            clk_div <= 0;
+            sck <= 0;
+            ws <= 0;
+            sd <= 0;
             bit_counter <= 0;
-            shift_reg  <= 16'd0;
+            shift_reg <= 16'd0;
         end else if (ena) begin
             // Clock divider for SCK
+            clk_div <= clk_div + 1;
+            
             if (clk_div == SCK_DIV - 1) begin
                 clk_div <= 0;
                 sck <= ~sck;  // Toggle SCK
                 
                 // On falling edge of SCK (when it transitions to 0)
-                if (sck == 1'b1) begin
+                if (sck) begin
                     if (bit_counter == 0) begin
                         // Load new data at start of frame
                         shift_reg <= {data, 8'd0};
@@ -429,8 +431,6 @@ module i2s_transmitter (
                         bit_counter <= bit_counter + 1;
                     end
                 end
-            end else begin
-                clk_div <= clk_div + 1;
             end
         end
     end
