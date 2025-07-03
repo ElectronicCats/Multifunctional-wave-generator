@@ -129,18 +129,24 @@ module tt_um_waves (
     );
 
 
-    // Apply ADSR Envelope to waveform output
-    reg [7:0] scaled_wave;
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            temp_wave <= 16'd0;
-            scaled_wave <= 8'd10;
+// Apply ADSR Envelope to waveform output
+reg [7:0] scaled_wave;
+wire adsr_bypass = (attack == 0) && (decay == 0) && (rel == 0); // Bypass if all rates are zero
+
+always @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+        temp_wave <= 16'd0;
+        scaled_wave <= 8'd10;
+    end else begin
+        temp_wave <= (selected_wave * adsr_amplitude) >> 8;
+        if (adsr_bypass) begin
+            scaled_wave <= selected_wave; // Bypass ADSR scaling
         end else begin
-            temp_wave <= (selected_wave * adsr_amplitude) >> 8;
             scaled_wave <= (temp_wave[15:8] > 8'd10) ? temp_wave[15:8] : 8'd10;
-            $display("ADSR Amplitude: %d, Scaled Wave: %d", adsr_amplitude, scaled_wave);
         end
+        $display("ADSR Amplitude: %d, Scaled Wave: %d", adsr_amplitude, scaled_wave);
     end
+end
 
   
     wire i2s_sck, i2s_ws, i2s_sd;
