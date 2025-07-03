@@ -392,9 +392,9 @@ module i2s_transmitter (
 
     reg [3:0] bit_counter;  
     reg [15:0] shift_reg;   
-    reg [7:0] clk_div;      
+    reg [2:0] clk_div;      // Reduced width for clock divider
 
-    parameter SCK_DIV = 8;  
+    parameter SCK_DIV = 4;  // Reduced divider value for faster clock
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -405,36 +405,36 @@ module i2s_transmitter (
             bit_counter <= 0;
             shift_reg  <= 16'd0;
         end else if (ena) begin
-            if (clk_div == (SCK_DIV - 1)) begin
+            // Clock divider for SCK
+            if (clk_div == SCK_DIV - 1) begin
                 clk_div <= 0;
-                sck <= ~sck;
+                sck <= ~sck;  // Toggle SCK
+                
+                // On falling edge of SCK (when it transitions to 0)
+                if (sck == 1'b1) begin
+                    if (bit_counter == 0) begin
+                        // Load new data at start of frame
+                        shift_reg <= {data, 8'd0};
+                        ws <= ~ws;  // Toggle word select
+                    end else begin
+                        // Shift data
+                        shift_reg <= shift_reg << 1;
+                    end
+                    sd <= shift_reg[15];  // Output MSB
+                    
+                    // Update bit counter
+                    if (bit_counter == 15) begin
+                        bit_counter <= 0;
+                    end else begin
+                        bit_counter <= bit_counter + 1;
+                    end
+                end
             end else begin
                 clk_div <= clk_div + 1;
             end
-
-            if (sck == 0) begin  
-                if (bit_counter == 0) begin
-                    ws <= ~ws;  
-                    shift_reg <= {data, 8'd0}; // Always load correct data
-                end else begin
-                    shift_reg <= shift_reg << 1;
-                end
-                sd <= shift_reg[15];
-
-                if (bit_counter == 15)
-                    bit_counter <= 0; // Ensure proper reset
-                else
-                    bit_counter <= bit_counter + 1;
-            end
-        end else begin
-            sck <= 0;
-            ws <= 0;
-            sd <= 0;
-            bit_counter <= 0;
         end
     end
 endmodule
-
 
 
 
