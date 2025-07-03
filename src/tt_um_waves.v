@@ -670,4 +670,3 @@ module encoder #(
         end
     end
 endmodule
-`default_nettype no
