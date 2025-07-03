@@ -616,17 +616,17 @@ module square_wave_generator (
     input  wire       ena,         // Enable signal
     input  wire       clk,         // Clock signal
     input  wire       rst_n,       // Active-low reset signal
-    // verilator lint_off UNUSED
     input  wire [7:0] phase, 
-    // verilator lint_on UNUSED
     output reg  [7:0] wave_out     // 8-bit output wave
 );  
-
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n)
-            wave_out <= 8'd0;  // Reset output on reset
-        else if (ena)
-            wave_out <= phase[7] ? 8'd255 : 8'd0;  // Use the most significant bit of phase
+        if (!rst_n) begin
+            wave_out <= 8'd0;
+        end else if (ena) begin
+            // Output 255 when phase >= 128, 0 otherwise
+            wave_out <= (phase >= 8'd128) ? 8'd255 : 8'd0;
+            $display("Square Wave: Phase = %d, Output = %d", phase, wave_out);
+        end
     end
 endmodule
 
