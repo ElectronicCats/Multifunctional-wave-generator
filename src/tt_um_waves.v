@@ -131,7 +131,7 @@ module tt_um_waves (
 
 // Apply ADSR Envelope to waveform output
 reg [7:0] scaled_wave;
-wire adsr_bypass = (attack == 0) && (decay == 0) && (rel == 0);
+wire adsr_bypass = (attack == 0) && (decay == 0) && (sustain == 0) && (rel == 0);
 
 always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
@@ -140,10 +140,11 @@ always @(posedge clk or negedge rst_n) begin
         if (adsr_bypass) begin
             scaled_wave <= selected_wave;  // Bypass when ADSR is disabled
         end else begin
-            // Direct combinational multiplication
+            // Only apply envelope when ADSR is active
             scaled_wave <= (selected_wave * adsr_amplitude) >> 8;
         end
-        $display("ADSR Amplitude: %d, Scaled Wave: %d", adsr_amplitude, scaled_wave);
+        $display("ADSR Bypass: %b, Amplitude: %d, Selected: %d, Scaled: %d", 
+                 adsr_bypass, adsr_amplitude, selected_wave, scaled_wave);
     end
 end
 
@@ -395,13 +396,9 @@ module i2s_transmitter (
     output reg sd          
 );
 
-    reg [3:0] bit_counter;  // Changed to 4 bits
-    reg [15:0] shift_reg;   
-    reg [3:0] clk_div;      // Changed from 3 to 4 bits
-    reg initialized;
-
-    parameter SCK_DIV = 4;
-    parameter INIT_DELAY = 10;  // Requires 4 bits (1010)
+    reg [3:0] bit_counter;
+    reg [15:0] shift_reg;
+    reg [3:0] clk_div;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -411,39 +408,28 @@ module i2s_transmitter (
             sd <= 0;
             bit_counter <= 0;
             shift_reg <= 16'd0;
-            initialized <= 0;
         end else if (ena) begin
-            if (!initialized) begin
-                // Initialization delay
-                if (clk_div == INIT_DELAY) begin
-                    initialized <= 1;
-                    clk_div <= 0;
-                end else begin
-                    clk_div <= clk_div + 1;
-                end
-            end else begin
-                // Normal operation
-                clk_div <= clk_div + 1;
+            // Always increment clock divider
+            clk_div <= clk_div + 1;
+            
+            if (clk_div == 3) begin
+                clk_div <= 0;       // Reset after reaching max
+                sck <= ~sck;        // Toggle serial clock
                 
-                if (clk_div == SCK_DIV - 1) begin
-                    clk_div <= 0;
-                    sck <= ~sck;
-                    
-                    if (sck) begin
-                        if (bit_counter == 0) begin
-                            shift_reg <= {data, 8'd0};
-                            ws <= ~ws;
-                        end else begin
-                            shift_reg <= shift_reg << 1;
-                        end
-                        sd <= shift_reg[15];
-                        
-                        if (bit_counter == 15) begin
-                            bit_counter <= 0;
-                        end else begin
-                            bit_counter <= bit_counter + 1;
-                        end
+                // Update data on falling edge (when sck was high)
+                if (sck) begin 
+                    if (bit_counter == 0) begin
+                        // Start new frame: load data and toggle word select
+                        shift_reg <= {data, 8'd0};
+                        ws <= ~ws;
+                    end else begin
+                        // Shift out next bit
+                        shift_reg <= shift_reg << 1;
                     end
+                    
+                    // Output MSB and update bit counter
+                    sd <= shift_reg[15];
+                    bit_counter <= (bit_counter == 15) ? 0 : bit_counter + 1;
                 end
             end
         end
