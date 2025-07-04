@@ -395,11 +395,13 @@ module i2s_transmitter (
     output reg sd          
 );
 
-    reg [3:0] bit_counter;  
+    reg [3:0] bit_counter;  // Changed to 4 bits
     reg [15:0] shift_reg;   
-    reg [2:0] clk_div;      // Reduced width for clock divider
+    reg [3:0] clk_div;      // Changed from 3 to 4 bits
+    reg initialized;
 
-    parameter SCK_DIV = 4;  // Reduced divider value for faster clock
+    parameter SCK_DIV = 4;
+    parameter INIT_DELAY = 10;  // Requires 4 bits (1010)
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -409,31 +411,38 @@ module i2s_transmitter (
             sd <= 0;
             bit_counter <= 0;
             shift_reg <= 16'd0;
+            initialized <= 0;
         end else if (ena) begin
-            // Clock divider for SCK
-            clk_div <= clk_div + 1;
-            
-            if (clk_div == SCK_DIV - 1) begin
-                clk_div <= 0;
-                sck <= ~sck;  // Toggle SCK
+            if (!initialized) begin
+                // Initialization delay
+                if (clk_div == INIT_DELAY) begin
+                    initialized <= 1;
+                    clk_div <= 0;
+                end else begin
+                    clk_div <= clk_div + 1;
+                end
+            end else begin
+                // Normal operation
+                clk_div <= clk_div + 1;
                 
-                // On falling edge of SCK (when it transitions to 0)
-                if (sck) begin
-                    if (bit_counter == 0) begin
-                        // Load new data at start of frame
-                        shift_reg <= {data, 8'd0};
-                        ws <= ~ws;  // Toggle word select
-                    end else begin
-                        // Shift data
-                        shift_reg <= shift_reg << 1;
-                    end
-                    sd <= shift_reg[15];  // Output MSB
+                if (clk_div == SCK_DIV - 1) begin
+                    clk_div <= 0;
+                    sck <= ~sck;
                     
-                    // Update bit counter
-                    if (bit_counter == 15) begin
-                        bit_counter <= 0;
-                    end else begin
-                        bit_counter <= bit_counter + 1;
+                    if (sck) begin
+                        if (bit_counter == 0) begin
+                            shift_reg <= {data, 8'd0};
+                            ws <= ~ws;
+                        end else begin
+                            shift_reg <= shift_reg << 1;
+                        end
+                        sd <= shift_reg[15];
+                        
+                        if (bit_counter == 15) begin
+                            bit_counter <= 0;
+                        end else begin
+                            bit_counter <= bit_counter + 1;
+                        end
                     end
                 end
             end
