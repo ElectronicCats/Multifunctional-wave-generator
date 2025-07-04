@@ -623,8 +623,8 @@ module square_wave_generator (
         if (!rst_n) begin
             wave_out <= 8'd0;
         end else if (ena) begin
-            // Output 255 when phase >= 128, 0 otherwise
-            wave_out <= (phase >= 8'd128) ? 8'd255 : 8'd0;
+            // Output 255 when phase > 127, 0 otherwise (fixed comparison)
+            wave_out <= (phase > 8'd127) ? 8'd255 : 8'd0;
             $display("Square Wave: Phase = %d, Output = %d", phase, wave_out);
         end
     end

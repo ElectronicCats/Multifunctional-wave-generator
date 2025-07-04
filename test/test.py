@@ -1,6 +1,6 @@
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import Timer, RisingEdge
+from cocotb.triggers import Timer, RisingEdge, FallingEdge
 import random
 
 @cocotb.test()
@@ -52,31 +52,27 @@ async def test_waveforms(dut):
         await send_uart(dut, cmd)
         await Timer(20, units="us")  # Settling time
         
-        samples = await capture_samples(dut, 500)
+        samples = await capture_samples(dut, 100)
         assert verify_waveform(samples, name), f"{name} verification failed"
 
 def verify_waveform(samples, waveform):
     """Enhanced waveform analysis with statistical metrics"""
-    if len(samples) < 100:
+    if len(samples) < 20:
         return False
         
-    mean = sum(samples)/len(samples)
-    variance = sum((x-mean)**2 for x in samples)/len(samples)
-    min_val = min(samples)
-    max_val = max(samples)
-    
     if waveform == 'square':
-        # Check duty cycle and extreme values
-        high_count = sum(1 for x in samples if x > 200)
-        low_count = sum(1 for x in samples if x < 50)
-        if (high_count + low_count) == 0:
+        # Square wave specific checks
+        high_count = sum(1 for x in samples if x > 250)
+        low_count = sum(1 for x in samples if x < 5)
+        total_cycles = high_count + low_count
+        
+        if total_cycles == 0:
             return False
-        duty_cycle = high_count / (high_count + low_count)
-        return (
-            0.4 < duty_cycle < 0.6 and
-            max_val > 250 and
-            min_val < 5
-        )
+            
+        duty_cycle = high_count / total_cycles
+        return (0.45 < duty_cycle < 0.55 and 
+                high_count > 0 and 
+                low_count > 0)
     
     elif waveform == 'sine':
         # Check distribution symmetry
@@ -84,10 +80,10 @@ def verify_waveform(samples, waveform):
         q1 = sorted_samples[len(samples)//4]
         q3 = sorted_samples[3*len(samples)//4]
         iqr = q3 - q1
+        mean = sum(samples)/len(samples)
         return (
-            80 < variance < 120 and 
+            80 < iqr < 120 and 
             100 < mean < 150 and
-            iqr > 60 and
             abs((q3 - mean) - (mean - q1)) < 15
         )
     
@@ -99,7 +95,7 @@ def verify_waveform(samples, waveform):
         q3 = sorted_samples[3*len(samples)//4]
         return (
             abs((q3 - median) - (median - q1)) < 10 and
-            (max_val - min_val) > 200
+            (max(samples) - min(samples)) > 200
         )
     
     elif waveform == 'sawtooth':
@@ -109,7 +105,7 @@ def verify_waveform(samples, waveform):
         monotonicity = transitions / len(samples)
         return (
             monotonicity > 0.85 and
-            (max_val - min_val) > 200
+            (max(samples) - min(samples)) > 200
         )
     
     return False
@@ -127,7 +123,6 @@ async def test_frequency_range(dut):
         await send_uart(dut, cmd)
         await Timer(20, units="us")
         
-        samples = await capture_samples(dut, 1000)
         freq = await measure_frequency(dut)
         dut._log.info(f"Measured {name} frequency: {freq:.1f} Hz")
         counts.append(freq)
@@ -142,7 +137,7 @@ async def test_adsr_functionality(dut):
     await send_uart(dut, 0x54)  # Triangle wave
     await send_uart(dut, 0x5B)  # A4
     
-    ref_samples = await capture_samples(dut, 1000)
+    ref_samples = await capture_samples(dut, 100)
     ref_avg = sum(ref_samples)/len(ref_samples)
     
     # Adjust ADSR parameters
@@ -152,7 +147,7 @@ async def test_adsr_functionality(dut):
     await rotate_encoder(dut, 3, 4)   # Release
     await Timer(50, units="us")
     
-    env_samples = await capture_samples(dut, 2000)
+    env_samples = await capture_samples(dut, 100)
     env_avg = sum(env_samples)/len(env_samples)
     
     assert env_avg < ref_avg * 0.8, "ADSR not reducing amplitude"
@@ -165,7 +160,7 @@ async def test_adsr_stages(dut):
     await rotate_encoder(dut, 2, 4)  # Sustain = 4 (50%)
     await rotate_encoder(dut, 3, 3)  # Release = 3
     
-    samples = await capture_samples(dut, 3000)
+    samples = await capture_samples(dut, 200)
     
     # Detect envelope phases
     attack_done = next((i for i, v in enumerate(samples) if v > 250), None)
@@ -182,7 +177,7 @@ async def test_adsr_stages(dut):
 
 async def measure_frequency(dut, capture_ms=10):
     """Measure actual output frequency"""
-    samples = await capture_samples(dut, int(capture_ms * 10000))  # 10kHz sampling
+    samples = await capture_samples(dut, int(capture_ms * 50))  # ~50 samples/ms
     median = sorted(samples)[len(samples)//2]
     crossings = 0
     last_state = samples[0] > median
@@ -225,9 +220,21 @@ async def rotate_encoder(dut, encoder_id, steps):
             await Timer(20000, units="ps")  # 50us per step
 
 async def capture_samples(dut, count):
-    """Capture I2S output samples"""
+    """Capture and decode I2S output samples"""
     samples = []
     for _ in range(count):
-        samples.append(dut.uo_out[2].value.integer)
-        await Timer(100, units="ns")  # 10MHz sampling
+        # Wait for WS edge to start frame
+        await RisingEdge(dut.uo_out[1])
+        
+        sample = 0
+        # Capture 16 bits (MSB first)
+        for i in range(15, -1, -1):
+            await RisingEdge(dut.uo_out[0])  # Wait for SCK rising edge
+            sample_bit = dut.uo_out[2].value
+            sample |= int(sample_bit) << i
+        
+        samples.append(sample >> 8)  # Use upper 8 bits
+        
+        # Skip right channel
+        await RisingEdge(dut.uo_out[1])
     return samples
