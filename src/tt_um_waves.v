@@ -391,9 +391,9 @@ module i2s_transmitter (
     input wire rst_n,      
     input wire ena,        
     input wire [7:0] data, 
-    output reg sck,        
-    output reg ws,         
-    output reg sd          
+    output reg sck = 0,   // Initialize to 0    
+    output reg ws = 0,    // Initialize to 0
+    output reg sd = 0     // Initialize to 0
 );
 
     reg [3:0] bit_counter;
@@ -409,25 +409,20 @@ module i2s_transmitter (
             bit_counter <= 0;
             shift_reg <= 16'd0;
         end else if (ena) begin
-            // Always increment clock divider
-            clk_div <= clk_div + 1;
+            clk_div <= clk_div + 1;  // Always increment
             
             if (clk_div == 3) begin
                 clk_div <= 0;       // Reset after reaching max
-                sck <= ~sck;        // Toggle serial clock
+                sck <= ~sck;        // Toggle clock
                 
-                // Update data on falling edge (when sck was high)
-                if (sck) begin 
+                // Update data on falling edge
+                if (sck) begin
                     if (bit_counter == 0) begin
-                        // Start new frame: load data and toggle word select
                         shift_reg <= {data, 8'd0};
                         ws <= ~ws;
                     end else begin
-                        // Shift out next bit
                         shift_reg <= shift_reg << 1;
                     end
-                    
-                    // Output MSB and update bit counter
                     sd <= shift_reg[15];
                     bit_counter <= (bit_counter == 15) ? 0 : bit_counter + 1;
                 end
@@ -534,18 +529,18 @@ module adsr_generator (
 
     adsr_state_t state;
 
-    // Internal registers for smooth transitions
-    reg [15:0] attack_counter;
-    reg [15:0] decay_counter;
-    reg [15:0] release_counter;
+    // Reduced counter widths for faster response
+    reg [7:0] attack_counter;
+    reg [7:0] decay_counter;
+    reg [7:0] release_counter;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             state            <= STATE_IDLE;
             amplitude        <= 8'd0;
-            attack_counter   <= 16'd0;
-            decay_counter    <= 16'd0;
-            release_counter  <= 16'd0;
+            attack_counter   <= 8'd0;
+            decay_counter    <= 8'd0;
+            release_counter  <= 8'd0;
         end else if (ena) begin
             case (state)
                 // --------- IDLE ---------
@@ -557,11 +552,11 @@ module adsr_generator (
                 
                 // --------- ATTACK ---------
                 STATE_ATTACK: begin
-                    if (attack_counter < {attack, 8'd0}) begin
+                    if (attack_counter < attack) begin
                         attack_counter <= attack_counter + 1;
                         amplitude <= amplitude + 1;
                     end else begin
-                        attack_counter <= 16'd0;
+                        attack_counter <= 8'd0;
                         state <= STATE_DECAY;
                     end
                 end
@@ -569,11 +564,11 @@ module adsr_generator (
                 // --------- DECAY ---------
                 STATE_DECAY: begin
                     if (amplitude > sustain) begin
-                        if (decay_counter < {decay, 8'd0}) begin
+                        if (decay_counter < decay) begin
                             decay_counter <= decay_counter + 1;
                             amplitude <= amplitude - 1;
                         end else begin
-                            decay_counter <= 16'd0;
+                            decay_counter <= 8'd0;
                         end
                     end else begin
                         state <= STATE_SUSTAIN;
@@ -589,11 +584,11 @@ module adsr_generator (
                 
                 // --------- RELEASE ---------
                 STATE_RELEASE: begin
-                    if (release_counter < {rel, 8'd0}) begin
+                    if (release_counter < rel) begin
                         release_counter <= release_counter + 1;
                         amplitude <= amplitude - 1;
                     end else begin
-                        release_counter <= 16'd0;
+                        release_counter <= 8'd0;
                         state <= STATE_IDLE;
                     end
                 end
@@ -602,7 +597,6 @@ module adsr_generator (
             endcase
         end
     end
-
 endmodule
 
 

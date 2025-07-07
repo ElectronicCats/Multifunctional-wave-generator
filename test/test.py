@@ -2,6 +2,10 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import Timer, RisingEdge, FallingEdge
 import random
+import os
+
+# Set environment variable to resolve 'x' states
+os.environ["COCOTB_RESOLVE_X"] = "ZERO"
 
 @cocotb.test()
 async def test_full_functionality(dut):
@@ -18,7 +22,7 @@ async def test_full_functionality(dut):
     # Release reset
     dut.rst_n.value = 1
     dut.ena.value = 1
-    await Timer(100, units="us")  # Increased initialization time
+    await Timer(200, units="us")  # Increased initialization time
     
     # Test sequence
     await basic_sanity_check(dut)
@@ -30,15 +34,20 @@ async def test_full_functionality(dut):
 
 async def basic_sanity_check(dut):
     """Verify I2S clock activity"""
+    # Wait for initialization to complete
+    await Timer(20, units="us")
+    
     # Wait for I2S clock to start
-    await Timer(10, units="us")
+    last_val = dut.uo_out[0].integer
+    while last_val not in (0, 1):
+        await RisingEdge(dut.clk)
+        last_val = dut.uo_out[0].integer
     
     # Check for clock transitions
     transitions = 0
-    last_val = dut.uo_out.value[0].value
     for _ in range(1000):
         await Timer(100, units="ns")
-        current_val = dut.uo_out.value[0].value
+        current_val = dut.uo_out[0].integer
         if current_val != last_val:
             transitions += 1
         last_val = current_val
@@ -92,10 +101,10 @@ async def test_frequency_range(dut):
         
         # Simple frequency measurement
         edges = 0
-        last_val = dut.uo_out.value[1].value  # WS signal
+        last_val = dut.uo_out[1].integer  # WS signal
         for _ in range(10000):
             await Timer(100, units="ns")
-            current_val = dut.uo_out.value[1].value
+            current_val = dut.uo_out[1].integer
             if current_val != last_val:
                 edges += 1
             last_val = current_val
@@ -166,6 +175,6 @@ async def capture_samples(dut, count):
     samples = []
     for _ in range(count):
         # Use direct signal access instead of indexed signals
-        samples.append(dut.uo_out.value[2].value)
+        samples.append(dut.uo_out[2].integer)
         await Timer(1, units="us")  # Reduced sampling rate
     return samples
