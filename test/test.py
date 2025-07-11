@@ -38,16 +38,16 @@ async def basic_sanity_check(dut):
     await Timer(20, units="us")
     
     # Wait for I2S clock to start
-    last_val = dut.uo_out[0].integer
+    last_val = dut.uo_out.value[0].integer
     while last_val not in (0, 1):
         await RisingEdge(dut.clk)
-        last_val = dut.uo_out[0].integer
+        last_val = dut.uo_out.value[0].integer
     
     # Check for clock transitions
     transitions = 0
     for _ in range(1000):
         await Timer(100, units="ns")
-        current_val = dut.uo_out[0].integer
+        current_val = dut.uo_out.value[0].integer
         if current_val != last_val:
             transitions += 1
         last_val = current_val
@@ -101,10 +101,10 @@ async def test_frequency_range(dut):
         
         # Simple frequency measurement
         edges = 0
-        last_val = dut.uo_out[1].integer  # WS signal
+        last_val = dut.uo_out.value[1].integer  # WS signal
         for _ in range(10000):
             await Timer(100, units="ns")
-            current_val = dut.uo_out[1].integer
+            current_val = dut.uo_out.value[1].integer
             if current_val != last_val:
                 edges += 1
             last_val = current_val
@@ -175,6 +175,6 @@ async def capture_samples(dut, count):
     samples = []
     for _ in range(count):
         # Use direct signal access instead of indexed signals
-        samples.append(dut.uo_out[2].integer)
+        samples.append(dut.uo_out.value[2].integer)
         await Timer(1, units="us")  # Reduced sampling rate
     return samples
