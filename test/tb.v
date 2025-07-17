@@ -31,7 +31,7 @@ module tb;
   
   // Waveform capture registers
   reg [7:0] captured_wave;
-  real measured_freq;
+  integer measured_freq;  // Changed from real to integer
   reg [7:0] waveform_samples [0:255];
   integer sample_idx = 0;
 
@@ -60,43 +60,43 @@ module tb;
   // UART Transmission Task (115200 baud)
   task uart_send(input [7:0] data);
     integer i;
+    integer baud_period_ns = 8681;  // 1e9/115200 ≈ 8680.55ns
     begin
-      // Baud period: 1/115200 ≈ 8680.55ns (use 8681ns)
-      real baud_period_ns = 1000000000.0 / 115200;
-      
       // Start bit
       ui_in[0] = 1'b0;
-      #(baud_period_ns);
+      #baud_period_ns;
       
       // Data bits (LSB first)
       for (i = 0; i < 8; i = i + 1) begin
         ui_in[0] = data[i];
-        #(baud_period_ns);
+        #baud_period_ns;
       end
       
       // Stop bit
       ui_in[0] = 1'b1;
-      #(baud_period_ns);
+      #baud_period_ns;
       
       $display("[UART] Sent: 0x%h (%s)", data, get_command_name(data));
     end
   endtask
 
-  // Command Decoder
+  // Command Decoder - Fixed function declaration
   function string get_command_name(input [7:0] cmd);
-    case(cmd)
-      8'h54: return "Triangle Wave";
-      8'h53: return "Sawtooth Wave";
-      8'h51: return "Square Wave";
-      8'h57: return "Sine Wave";
-      8'h4E, 8'h6E: return "Noise ON";
-      8'h46, 8'h66: return "Noise OFF";
-      8'h30: return "C2 (65.4Hz)";
-      8'h39: return "A2 (110Hz)";
-      8'h5B: return "A4 (440Hz)";
-      8'h7A: return "B6 (1975.5Hz)";
-      default: return $sformatf("Unknown: 0x%h", cmd);
-    endcase
+    begin
+      case(cmd)
+        8'h54: get_command_name = "Triangle Wave";
+        8'h53: get_command_name = "Sawtooth Wave";
+        8'h51: get_command_name = "Square Wave";
+        8'h57: get_command_name = "Sine Wave";
+        8'h4E, 8'h6E: get_command_name = "Noise ON";
+        8'h46, 8'h66: get_command_name = "Noise OFF";
+        8'h30: get_command_name = "C2 (65.4Hz)";
+        8'h39: get_command_name = "A2 (110Hz)";
+        8'h5B: get_command_name = "A4 (440Hz)";
+        8'h7A: get_command_name = "B6 (1975.5Hz)";
+        default: get_command_name = $sformatf("Unknown: 0x%h", cmd);
+      endcase
+    end
   endfunction
 
   // Encoder Simulation
@@ -158,18 +158,18 @@ module tb;
     end
   endtask
 
-  // Frequency Measurement
+  // Frequency Measurement - Fixed to use integer arithmetic
   task measure_frequency();
-    real t1, t2;
+    integer t1, t2;
     begin
       // Measure between two falling edges of WS
       @(negedge i2s_ws);
-      t1 = $realtime;
+      t1 = $time;
       @(negedge i2s_ws);
-      t2 = $realtime;
+      t2 = $time;
       
-      measured_freq = 1.0e9 / (t2 - t1); // Convert ns to Hz
-      $display("[FREQ] Measured sample rate: %0.1f Hz", measured_freq);
+      measured_freq = 1000000000 / (t2 - t1); // Convert ns to Hz
+      $display("[FREQ] Measured sample rate: %0d Hz", measured_freq);
     end
   endtask
 
@@ -280,10 +280,10 @@ module tb;
       
       // Verify expected sample rate
       if (measured_freq < 90000 || measured_freq > 100000) begin
-        $error("Sample rate out of range! Expected ~97.6kHz, got %0.1f Hz", measured_freq);
+        $error("Sample rate out of range! Expected ~97.6kHz, got %0d Hz", measured_freq);
       end
       else begin
-        $display("Sample rate verified: %0.1f Hz", measured_freq);
+        $display("Sample rate verified: %0d Hz", measured_freq);
       end
     end
   endtask
