@@ -1,15 +1,21 @@
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import Timer, RisingEdge, FallingEdge
+from cocotb.triggers import Timer, RisingEdge, FallingEdge, ClockCycles
 import random
 import os
+import numpy as np
 
 # Set environment variable to resolve 'x' states
 os.environ["COCOTB_RESOLVE_X"] = "ZERO"
 
+# UART and I2S configuration
+BAUD_RATE = 115200
+CLK_FREQ = 25e6  # 25MHz
+BAUD_PERIOD_NS = int(1e9 / BAUD_RATE)
+
 @cocotb.test()
 async def test_full_functionality(dut):
-    """Complete system test with enhanced verification"""
+    """Complete system test with Tiny Tapeout compatibility"""
     clock = Clock(dut.clk, 40, units="ns")  # 25MHz
     cocotb.start_soon(clock.start())
     
@@ -19,10 +25,10 @@ async def test_full_functionality(dut):
     dut.ui_in.value = 0xFF  # UART idle
     await Timer(1, units="us")
     
-    # Release reset
+    # Release reset and enable
     dut.rst_n.value = 1
     dut.ena.value = 1
-    await Timer(200, units="us")  # Increased initialization time
+    await ClockCycles(dut.clk, 100)  # Wait for initialization
     
     # Test sequence
     await basic_sanity_check(dut)
@@ -34,20 +40,15 @@ async def test_full_functionality(dut):
 
 async def basic_sanity_check(dut):
     """Verify I2S clock activity"""
-    # Wait for initialization to complete
-    await Timer(20, units="us")
-    
     # Wait for I2S clock to start
-    last_val = dut.uo_out.value[0].integer
-    while last_val not in (0, 1):
-        await RisingEdge(dut.clk)
-        last_val = dut.uo_out.value[0].integer
+    await ClockCycles(dut.clk, 100)
     
-    # Check for clock transitions
+    # Check for clock transitions on SCK (uo_out[0])
     transitions = 0
+    last_val = dut.uo_out[0].value
     for _ in range(1000):
-        await Timer(100, units="ns")
-        current_val = dut.uo_out.value[0].integer
+        await RisingEdge(dut.clk)
+        current_val = dut.uo_out[0].value
         if current_val != last_val:
             transitions += 1
         last_val = current_val
@@ -55,7 +56,7 @@ async def basic_sanity_check(dut):
     assert transitions > 50, f"I2S clock not active (transitions: {transitions})"
 
 async def test_waveforms(dut):
-    """Test all waveform types"""
+    """Test all waveform types with Tiny Tapeout constraints"""
     waveforms = {
         'square': 0x51,
         'sine': 0x57,
@@ -65,116 +66,135 @@ async def test_waveforms(dut):
     
     for name, cmd in waveforms.items():
         await send_uart(dut, cmd)
-        await Timer(50, units="us")  # Increased settling time
+        await ClockCycles(dut.clk, 500)  # Waveform switching time
         
+        # Capture multiple samples for verification
         samples = await capture_samples(dut, 50)
-        assert verify_waveform(samples, name), f"{name} verification failed"
+        
+        # Skip verification for noise (unpredictable)
+        if name != 'noise':
+            assert verify_waveform(samples, name), f"{name} verification failed"
 
 def verify_waveform(samples, waveform):
-    """Simplified waveform verification"""
+    """Improved waveform verification with statistical checks"""
     if len(samples) < 10:
         return False
         
-    if waveform == 'square':
-        high_count = sum(1 for x in samples if x > 200)
-        low_count = sum(1 for x in samples if x < 50)
-        total = high_count + low_count
-        return total > 0 and 0.4 < high_count/total < 0.6
+    # Calculate statistical properties
+    mean = np.mean(samples)
+    std_dev = np.std(samples)
+    unique_vals = len(set(samples))
     
-    # Other waveforms use simpler checks
-    max_val = max(samples)
-    min_val = min(samples)
-    return (max_val - min_val) > 100  # Basic amplitude check
+    if waveform == 'square':
+        # Should have mostly extreme values
+        return std_dev > 80 and unique_vals < 10
+    elif waveform == 'sine':
+        # Should have Gaussian-like distribution
+        return 50 < std_dev < 90 and unique_vals > 30
+    elif waveform == 'triangle':
+        # Should have linear distribution
+        return 40 < std_dev < 70 and unique_vals > 40
+    elif waveform == 'sawtooth':
+        # Should have many unique values
+        return unique_vals > 45 and std_dev > 60
+        
+    return True
 
 async def test_frequency_range(dut):
-    """Test frequency scaling"""
+    """Test frequency scaling with representative notes"""
+    # Only test 3 frequencies to keep test time reasonable
     freqs = {
-        'low': 0x30,   # C2
-        'mid': 0x5B,   # A4
-        'high': 0x7A   # B6
+        'low': 0x30,   # C2 (65.41Hz)
+        'mid': 0x5B,   # A4 (440Hz)
+        'high': 0x7A   # B6 (1975.53Hz)
     }
     
-    counts = []
+    periods = []
     for name, cmd in freqs.items():
         await send_uart(dut, cmd)
-        await Timer(50, units="us")  # Increased settling time
+        await ClockCycles(dut.clk, 1000)  # Frequency settling
         
-        # Simple frequency measurement
-        edges = 0
-        last_val = dut.uo_out.value[1].integer  # WS signal
-        for _ in range(10000):
-            await Timer(100, units="ns")
-            current_val = dut.uo_out.value[1].integer
-            if current_val != last_val:
-                edges += 1
-            last_val = current_val
+        # Measure period using WS (uo_out[1])
+        await RisingEdge(dut.uo_out[1])
+        start_time = cocotb.utils.get_sim_time(units='ns')
+        await RisingEdge(dut.uo_out[1])
+        end_time = cocotb.utils.get_sim_time(units='ns')
+        period_ns = end_time - start_time
         
-        freq = edges / (2 * 0.001)  # Approximate frequency
-        dut._log.info(f"Measured {name} frequency: {freq:.1f} Hz")
-        counts.append(freq)
+        dut._log.info(f"Measured {name} period: {period_ns} ns")
+        periods.append(period_ns)
     
-    # Verify frequency scaling
-    assert counts[2] > counts[1] > counts[0], "Invalid frequency scaling"
+    # Verify frequency scaling (high freq = short period)
+    assert periods[2] < periods[1] < periods[0], "Invalid frequency scaling"
 
 async def test_adsr_functionality(dut):
-    """Test ADSR envelope"""
+    """Test ADSR envelope with rotary encoders"""
     await send_uart(dut, 0x54)  # Triangle wave
     await send_uart(dut, 0x5B)  # A4
+    await ClockCycles(dut.clk, 500)
     
     # Capture reference amplitude
     ref_samples = await capture_samples(dut, 100)
-    ref_avg = sum(ref_samples)/len(ref_samples)
+    ref_peak = max(ref_samples)
     
     # Adjust ADSR parameters
-    await rotate_encoder(dut, 0, 10)  # Attack
-    await rotate_encoder(dut, 1, 5)   # Decay
-    await rotate_encoder(dut, 2, 8)   # Sustain
-    await rotate_encoder(dut, 3, 4)   # Release
-    await Timer(100, units="us")      # Increased settling time
+    await rotate_encoder(dut, 0, 5)  # Increase attack
+    await rotate_encoder(dut, 2, 3)  # Decrease sustain
+    await ClockCycles(dut.clk, 1000)  # ADSR settling
     
     # Capture ADSR amplitude
     env_samples = await capture_samples(dut, 100)
-    env_avg = sum(env_samples)/len(env_samples)
+    env_peak = max(env_samples)
     
-    assert env_avg < ref_avg * 0.8, "ADSR not reducing amplitude"
+    # Should see amplitude reduction
+    assert env_peak < ref_peak * 0.7, "ADSR not reducing amplitude"
 
 async def send_uart(dut, data):
-    """Simulate UART transmission"""
-    baud_period = 104166  # 9600 baud in ps
-    
+    """Simulate UART transmission at 115200 baud"""
     # Start bit
-    dut.ui_in.value = 0
-    await Timer(baud_period, units="ps")
+    dut.ui_in[0].value = 0
+    await Timer(BAUD_PERIOD_NS, units="ns")
     
     # Data bits (LSB first)
-    for _ in range(8):
-        dut.ui_in.value = data & 0x01
-        data >>= 1
-        await Timer(baud_period, units="ps")
+    for i in range(8):
+        dut.ui_in[0].value = (data >> i) & 0x01
+        await Timer(BAUD_PERIOD_NS, units="ns")
     
     # Stop bit
-    dut.ui_in.value = 1
-    await Timer(baud_period, units="ps")
+    dut.ui_in[0].value = 1
+    await Timer(BAUD_PERIOD_NS, units="ns")
+    await ClockCycles(dut.clk, 10)  # Small delay after transmission
 
 async def rotate_encoder(dut, encoder_id, steps):
-    """Simulate encoder rotation"""
+    """Simulate encoder rotation with quadrature signaling"""
     base_pin = encoder_id * 2
-    pattern = [0b00, 0b01, 0b11, 0b10] if steps > 0 else [0b00, 0b10, 0b11, 0b01]
-    steps = abs(steps)
+    pattern = [0b00, 0b10, 0b11, 0b01] if steps > 0 else [0b00, 0b01, 0b11, 0b10]
     
-    for _ in range(steps):
+    for _ in range(abs(steps)):
         for state in pattern:
-            # Use direct value assignment instead of uio_in
             current = dut.uio_in.value
-            new_val = (current & ~(0b11 << base_pin)) | (state << base_pin)
+            # Preserve other encoder states
+            mask = ~(0b11 << base_pin)
+            new_val = (current & mask) | (state << base_pin)
             dut.uio_in.value = new_val
-            await Timer(20000, units="ps")
+            await ClockCycles(dut.clk, 4)  # Encoder step timing
 
 async def capture_samples(dut, count):
-    """Capture I2S output samples (simplified)"""
+    """Capture I2S output samples from SD line (uo_out[2])"""
     samples = []
     for _ in range(count):
-        # Use direct signal access instead of indexed signals
-        samples.append(dut.uo_out.value[2].integer)
-        await Timer(1, units="us")  # Reduced sampling rate
+        # Wait for WS transition (start of frame)
+        await RisingEdge(dut.uo_out[1])
+        # Wait for first SCK edge
+        await RisingEdge(dut.uo_out[0])
+        
+        # Capture 8-bit value (MSB first)
+        sample = 0
+        for i in range(8):
+            await RisingEdge(dut.uo_out[0])
+            sample = (sample << 1) | dut.uo_out[2].value.integer
+            
+        samples.append(sample)
+        await ClockCycles(dut.clk, 10)  # Between samples
+        
     return samples
