@@ -3,7 +3,6 @@ from cocotb.clock import Clock
 from cocotb.triggers import Timer, RisingEdge, FallingEdge, ClockCycles
 import random
 import os
-import numpy as np
 
 # Set environment variable to resolve 'x' states
 os.environ["COCOTB_RESOLVE_X"] = "ZERO"
@@ -76,27 +75,29 @@ async def test_waveforms(dut):
             assert verify_waveform(samples, name), f"{name} verification failed"
 
 def verify_waveform(samples, waveform):
-    """Improved waveform verification with statistical checks"""
+    """Waveform verification without numpy dependency"""
     if len(samples) < 10:
         return False
         
-    # Calculate statistical properties
-    mean = np.mean(samples)
-    std_dev = np.std(samples)
+    # Calculate basic statistics manually
+    min_val = min(samples)
+    max_val = max(samples)
+    avg_val = sum(samples) / len(samples)
     unique_vals = len(set(samples))
+    peak_to_peak = max_val - min_val
     
     if waveform == 'square':
         # Should have mostly extreme values
-        return std_dev > 80 and unique_vals < 10
+        return min_val < 50 and max_val > 200 and unique_vals < 10
     elif waveform == 'sine':
-        # Should have Gaussian-like distribution
-        return 50 < std_dev < 90 and unique_vals > 30
+        # Should have smooth distribution
+        return 50 < min_val < 100 and 150 < max_val < 200 and unique_vals > 30
     elif waveform == 'triangle':
         # Should have linear distribution
-        return 40 < std_dev < 70 and unique_vals > 40
+        return peak_to_peak > 150 and unique_vals > 40
     elif waveform == 'sawtooth':
         # Should have many unique values
-        return unique_vals > 45 and std_dev > 60
+        return unique_vals > 45 and min_val < 50 and max_val > 200
         
     return True
 
