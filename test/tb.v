@@ -57,7 +57,7 @@ module tb;
     #100;
   end
 
-  // UART Transmission Task (115200 baud)
+  // UART Transmission Task (115200 baud) - Fixed timing
   task uart_send(input [7:0] data);
     integer i;
     integer baud_period_ns = 8681;  // 1e9/115200 ≈ 8680.55ns
@@ -99,7 +99,7 @@ module tb;
     end
   endfunction
 
-  // Encoder Simulation
+  // Encoder Simulation - Fixed to use integer steps
   task rotate_encoder(input [1:0] encoder_id, input integer steps, input clockwise);
     integer i, j;
     reg [1:0] base_pin;
@@ -173,7 +173,7 @@ module tb;
     end
   endtask
 
-  // Waveform Analysis
+  // Waveform Analysis - Fixed to avoid return statements
   task analyze_waveform(string wave_name);
     integer min_val = 255;
     integer max_val = 0;
@@ -182,22 +182,21 @@ module tb;
     begin
       if (sample_idx == 0) begin
         $display("[WAVE] No samples captured for analysis");
-        return;
+      end else begin
+        // Calculate waveform characteristics
+        for (i = 0; i < sample_idx; i = i + 1) begin
+          if (waveform_samples[i] < min_val) min_val = waveform_samples[i];
+          if (waveform_samples[i] > max_val) max_val = waveform_samples[i];
+          avg_val = avg_val + waveform_samples[i];
+        end
+        avg_val = avg_val / sample_idx;
+        
+        $display("[WAVE] %s Analysis: Min=%0d, Max=%0d, Avg=%0d, Pk-Pk=%0d",
+                 wave_name, min_val, max_val, avg_val, max_val - min_val);
+        
+        // Reset sample index
+        sample_idx = 0;
       end
-      
-      // Calculate waveform characteristics
-      for (i = 0; i < sample_idx; i = i + 1) begin
-        if (waveform_samples[i] < min_val) min_val = waveform_samples[i];
-        if (waveform_samples[i] > max_val) max_val = waveform_samples[i];
-        avg_val = avg_val + waveform_samples[i];
-      end
-      avg_val = avg_val / sample_idx;
-      
-      $display("[WAVE] %s Analysis: Min=%0d, Max=%0d, Avg=%0d, Pk-Pk=%0d",
-               wave_name, min_val, max_val, avg_val, max_val - min_val);
-      
-      // Reset sample index
-      sample_idx = 0;
     end
   endtask
 
