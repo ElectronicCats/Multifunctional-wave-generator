@@ -48,9 +48,15 @@ module tt_um_waves (
   
     // Phase accumulator for all waveforms
     reg [7:0] phase_accum;
-    reg [15:0] phase_accum_fraction;  // Fractional part for precision
-    // Phase accumulator update with fractional precision
     reg [23:0] phase_accum_full;  // Combined fractional and integer parts
+  
+  
+    // Pipeline registers to break critical path
+    reg [7:0] phase_accum_reg;
+    reg [7:0] selected_wave_reg;
+    reg [15:0] adsr_amplitude_reg;
+    reg        adsr_bypass_reg;
+
   
     wire [23:0] increment = {17'd0, freq_select, 1'b0};
     
@@ -89,6 +95,26 @@ module tt_um_waves (
             freq_divider <= uart_freq_divider;
         end
     end
+  
+  always @(posedge clk or negedge rst_sync_n) begin
+    if (!rst_sync_n) begin
+        phase_accum_reg    <= 8'd0;
+        selected_wave_reg  <= 8'd0;
+        adsr_amplitude_reg <= 16'd0;
+        adsr_bypass_reg    <= 1'b0;
+    end else begin
+        // Capture signals at current cycle
+        phase_accum_reg    <= phase_accum;
+        selected_wave_reg  <= selected_wave;
+        adsr_amplitude_reg <= adsr_amplitude;
+        
+        // Precompute bypass condition
+        adsr_bypass_reg    <= ((attack == 0) && 
+                               (decay == 0) && 
+                               (sustain == 0) && 
+                               (rel == 0));
+    end
+end
 
 
     // UART Receiver with critical path fix
@@ -101,6 +127,7 @@ module tt_um_waves (
         .white_noise_en(white_noise_en),
         .freq_divider(uart_freq_divider)
     );
+  
 
     // Encoders for ADSR
     encoder attack_encoder (.clk(clk), .rst_n(rst_sync_n), .a(uio_in[0]), .b(uio_in[1]), .value(attack), .ena(ena));
@@ -118,7 +145,18 @@ module tt_um_waves (
     white_noise_generator noise_gen (.clk(clk), .rst_n(rst_sync_n), .noise_out(noise_out), .ena(white_noise_en & ena));
     cordic_sine_generator sine_gen (.clk(clk), .rst_n(rst_sync_n), .ena(ena), .phase(phase_accum), .sine_out(sine_wave_out));
     
-    // Select waveform output
+      // Optimize multiplication path
+    reg [23:0] mult_result;  // Changed from 16 to 24 bits
+    always @(posedge clk or negedge rst_sync_n) begin
+        if (!rst_sync_n) begin
+            mult_result <= 24'd0;
+        end else begin
+            // Pipeline stage 1: Multiply
+            mult_result <= selected_wave_reg * adsr_amplitude_reg;
+        end
+    end
+  
+  // Select waveform output
     reg [7:0] selected_wave;
     always @(posedge clk or negedge rst_sync_n) begin
         if (!rst_sync_n) selected_wave <= 8'd128;
@@ -132,6 +170,21 @@ module tt_um_waves (
                 default: selected_wave <= 8'd128;
             endcase
         end
+    end
+  
+  // Use registered signals for modulation
+	wire [23:0] scaled_value = selected_wave * adsr_amplitude_reg;
+
+	always @(posedge clk or negedge rst_n) begin
+   	 if (!rst_n) begin
+        	scaled_wave <= 8'd0;
+    	end else begin
+        	if (adsr_bypass_reg) begin
+            	scaled_wave <= selected_wave_reg;  // Bypass
+            end else begin
+                scaled_wave <= scaled_value[23:16]; // Modulated
+            end
+    	end
     end
 
 
@@ -151,36 +204,27 @@ module tt_um_waves (
 
     // Apply ADSR Envelope to waveform output with proper scaling
     reg [7:0] scaled_wave;
-    wire adsr_bypass = (attack == 0) && (decay == 0) && (sustain == 0) && (rel == 0);
+    //wire adsr_bypass = (attack == 0) && (decay == 0) && (sustain == 0) && (rel == 0);
   
     // Use 16-bit multiplication: (8-bit wave * 16-bit amplitude) >> 16
-    wire [23:0] scaled_value = selected_wave * adsr_amplitude;
+    //wire [23:0] scaled_value = selected_wave * adsr_amplitude;
     
+
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             scaled_wave <= 8'd0;
         end else begin
-            if (adsr_bypass) begin
-                scaled_wave <= selected_wave;  // Bypass when ADSR is disabled
+            if (adsr_bypass_reg) begin
+                scaled_wave <= selected_wave_reg;  // Bypass
             end else begin
-                // Take upper 8 bits of 24-bit result
-                scaled_wave <= scaled_value[23:16];
+                scaled_wave <= mult_result[23:16]; // Use top 8 bits of 24-bit result
             end
         end
     end
 
   
     wire i2s_sck, i2s_ws, i2s_sd;
-    reg i2s_enable;
-  
-      // Enable I2S after reset delay
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            i2s_enable <= 0;
-        end else begin
-            i2s_enable <= 1;  // Always enabled after reset
-        end
-    end
+   
   
     i2s_transmitter i2s_out (
         .clk(clk),
@@ -505,7 +549,6 @@ module cordic_sine_generator (
     
     // Initialize with complete sine wave values
     // Values calculated as: 128 + 127*sin(2π*i/256)
-    integer i;
     initial begin
         sine_table[0] = 8'd128;
         sine_table[1] = 8'd131; sine_table[2] = 8'd134; sine_table[3] = 8'd137;
