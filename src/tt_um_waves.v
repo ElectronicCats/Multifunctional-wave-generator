@@ -56,7 +56,6 @@ module tt_um_waves (
     reg [7:0] selected_wave_reg;
     reg [15:0] adsr_amplitude_reg;
     reg        adsr_bypass_reg;
-
   
     wire [23:0] increment = {17'd0, freq_select, 1'b0};
     
@@ -171,28 +170,12 @@ end
             endcase
         end
     end
-  
-  // Use registered signals for modulation
-	wire [23:0] scaled_value = selected_wave * adsr_amplitude_reg;
-
-	always @(posedge clk or negedge rst_n) begin
-   	 if (!rst_n) begin
-        	scaled_wave <= 8'd0;
-    	end else begin
-        	if (adsr_bypass_reg) begin
-            	scaled_wave <= selected_wave_reg;  // Bypass
-            end else begin
-                scaled_wave <= scaled_value[23:16]; // Modulated
-            end
-    	end
-    end
-
 
 
     // ADSR generator
     adsr_generator adsr_gen (
         .clk(clk), 
-        .rst_n(rst_n),
+        .rst_n(rst_sync_n),
         .attack(attack), 
         .decay(decay),
         .sustain(sustain), 
@@ -204,24 +187,23 @@ end
 
     // Apply ADSR Envelope to waveform output with proper scaling
     reg [7:0] scaled_wave;
-    //wire adsr_bypass = (attack == 0) && (decay == 0) && (sustain == 0) && (rel == 0);
-  
-    // Use 16-bit multiplication: (8-bit wave * 16-bit amplitude) >> 16
-    //wire [23:0] scaled_value = selected_wave * adsr_amplitude;
-    
 
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
+
+   // Single always block for scaled_wave assignment
+   wire [23:0] product = selected_wave_reg * adsr_amplitude_reg;
+    
+    // Single always block for scaled_wave assignment
+    always @(posedge clk or negedge rst_sync_n) begin
+        if (!rst_sync_n) begin
             scaled_wave <= 8'd0;
         end else begin
             if (adsr_bypass_reg) begin
                 scaled_wave <= selected_wave_reg;  // Bypass
             end else begin
-                scaled_wave <= mult_result[23:16]; // Use top 8 bits of 24-bit result
+                scaled_wave <= product[23:16];     // Upper 8 bits
             end
         end
     end
-
   
     wire i2s_sck, i2s_ws, i2s_sd;
    
