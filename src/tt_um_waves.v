@@ -16,14 +16,10 @@ module tt_um_waves (
     wire rst_sync_n;
     
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            reset_sync_reg <= 3'b0;
-        end else begin
-            reset_sync_reg <= {reset_sync_reg[1:0], 1'b1};
-        end
+        if (!rst_n) reset_sync_reg <= 3'b0;
+        else reset_sync_reg <= {reset_sync_reg[1:0], 1'b1};
     end
-    
-    assign rst_sync_n = reset_sync_reg[2];  // Synchronized reset
+    assign rst_sync_n = reset_sync_reg[2]; 
   
   
     // UART Signals
@@ -31,8 +27,8 @@ module tt_um_waves (
     wire [2:0] wave_select;
     reg        white_noise_en;
     
-    // ADSR Control
-    wire [15:0] adsr_amplitude;
+    // ADSR  Control
+  wire [15:0]  adsr_amplitude;
     reg [7:0] attack, decay, sustain, rel; 
   
     wire unused_ui_in = |ui_in[7:1]; 
@@ -119,7 +115,7 @@ end
     // UART Receiver with critical path fix
     uart_receiver uart_rx_inst (
         .clk(clk),
-        .rst_n(rst_sync_n),
+        .rst_n(rst_sync_n),  // Fixed reset
         .rx(ui_in[0]),
         .freq_select(freq_select),
         .wave_select(wave_select),
@@ -144,31 +140,25 @@ end
     white_noise_generator noise_gen (.clk(clk), .rst_n(rst_sync_n), .noise_out(noise_out), .ena(white_noise_en & ena));
     cordic_sine_generator sine_gen (.clk(clk), .rst_n(rst_sync_n), .ena(ena), .phase(phase_accum), .sine_out(sine_wave_out));
     
-      // Optimize multiplication path
-    reg [23:0] mult_result;  // Changed from 16 to 24 bits
+    // Optimize multiplication path
+    reg [23:0] mult_result;
     always @(posedge clk or negedge rst_sync_n) begin
-        if (!rst_sync_n) begin
-            mult_result <= 24'd0;
-        end else begin
-            // Pipeline stage 1: Multiply
-            mult_result <= selected_wave_reg * adsr_amplitude_reg;
-        end
+        if (!rst_sync_n) mult_result <= 24'd0;
+        else mult_result <= selected_wave_reg * adsr_amplitude_reg;
     end
   
-  // Select waveform output
+    // Select waveform output
     reg [7:0] selected_wave;
     always @(posedge clk or negedge rst_sync_n) begin
         if (!rst_sync_n) selected_wave <= 8'd128;
-        else begin
-            case (wave_select)
-                3'b000: selected_wave <= tri_wave_out;
-                3'b001: selected_wave <= saw_wave_out;
-                3'b010: selected_wave <= sqr_wave_out;
-                3'b011: selected_wave <= sine_wave_out;
-                3'b100: selected_wave <= noise_out;
-                default: selected_wave <= 8'd128;
-            endcase
-        end
+        else case (wave_select)
+            3'b000: selected_wave <= tri_wave_out;
+            3'b001: selected_wave <= saw_wave_out;
+            3'b010: selected_wave <= sqr_wave_out;
+            3'b011: selected_wave <= sine_wave_out;
+            3'b100: selected_wave <= noise_out;
+            default: selected_wave <= 8'd128;
+        endcase
     end
 
 
@@ -185,38 +175,42 @@ end
     );
 
 
-    // Apply ADSR Envelope to waveform output with proper scaling
+    // Apply ADSR Envelope to waveform output
     reg [7:0] scaled_wave;
-
-
-   // Single always block for scaled_wave assignment
-   wire [23:0] product = selected_wave_reg * adsr_amplitude_reg;
+    wire [23:0] product = selected_wave_reg * adsr_amplitude_reg;
     
-    // Single always block for scaled_wave assignment
     always @(posedge clk or negedge rst_sync_n) begin
-        if (!rst_sync_n) begin
-            scaled_wave <= 8'd0;
-        end else begin
-            if (adsr_bypass_reg) begin
-                scaled_wave <= selected_wave_reg;  // Bypass
-            end else begin
-                scaled_wave <= product[23:16];     // Upper 8 bits
-            end
-        end
+        if (!rst_sync_n) scaled_wave <= 8'd0;
+        else if (adsr_bypass_reg) scaled_wave <= selected_wave_reg;
+        else scaled_wave <= product[23:16];
     end
   
     wire i2s_sck, i2s_ws, i2s_sd;
-   
   
+  // Pipeline the multiplier to break critical path
+reg [15:0] mult_stage1;
+always @(posedge clk) begin
+    mult_stage1 <= selected_wave * adsr_amplitude[15:8];
+end
+
+always @(posedge clk) begin
+    scaled_wave <= adsr_bypass ? selected_wave : mult_stage1[15:8];
+end
+
+// Simplify phase increment
+wire [15:0] increment = {10'd0, freq_select, 2'b00};  // Reduced from 24 bits
+   
+    // I2S transmitter with synchronized reset
     i2s_transmitter i2s_out (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst_n(rst_sync_n),  // Fixed: synchronized reset
         .data(scaled_wave), 
         .sck(i2s_sck),
         .ws(i2s_ws),
         .sd(i2s_sd),
         .ena(ena)
     );
+
 
     // I2S Output
     assign uo_out[0] = i2s_sck;
@@ -343,7 +337,7 @@ module uart_receiver (
                         8'h71, 8'h51: wave_select <= 3'b010;   // 'q' or 'Q'
                         8'h77, 8'h57: wave_select <= 3'b011;   // 'w' or 'W'
                         default: begin
-                            // Handle frequency selection with proper bit widths
+                            // Handle frequency selection
                             if (received_byte >= 8'h30 && received_byte <= 8'h39) begin
                                 // Numbers 0-9: Convert ASCII to value (0-9)
                                 temp_freq <= {2'b00, received_byte[3:0]};  // Zero-extend to 6 bits
@@ -361,7 +355,6 @@ module uart_receiver (
                     freq_select <= temp_freq;
                     
                     // Update frequency divider based on new frequency
-                    // Maintain exact values as provided in original code
                     case (temp_freq)
                         6'b000000: freq_divider <= 21'd1915712;  // C2 (65.41 Hz)
                         6'b000001: freq_divider <= 21'd1803586;  // C#2/Db2 (69.30 Hz)
@@ -457,7 +450,7 @@ module white_noise_generator (
         if (!rst_n) begin
             lfsr <= 16'hACE1; 
             noise_out <= 8'd0;
-        end else if (ena) begin
+        end else if (ena) begin  // Fixed: Enable gating
             lfsr <= {lfsr[14:0], lfsr[15] ^ lfsr[13] ^ lfsr[12] ^ lfsr[10]}; 
             noise_out <= lfsr[15:8]; 
         end
@@ -497,7 +490,7 @@ module i2s_transmitter (
                 
                 if (sck) begin
                     if (bit_counter == 0) begin
-                        shift_reg <= {data, 8'd0};
+                        shift_reg <= {data, 8'd0};  // 8-bit to 16-bit frame
                         ws <= ~ws;
                     end else begin
                         shift_reg <= shift_reg << 1;
@@ -622,14 +615,10 @@ module cordic_sine_generator (
 
     // Synchronous output with reset
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            sine_out <= 8'd0;
-        end else if (ena) begin
-            sine_out <= sine_table[phase];
-        end
+        if (!rst_n) sine_out <= 8'd0;
+        else if (ena) sine_out <= sine_table[phase];
     end
-
-endmodule
+endmodule                                            
 
 
 
@@ -642,12 +631,10 @@ module triangular_wave_generator (
 );
 
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            wave_out <= 8'd128;  // Set to mid-level
-        end else if (ena) begin
-            wave_out <= phase[7] ? (8'd255 - ({1'b0, phase[6:0]} << 1)) : ({1'b0, phase[6:0]} << 1);
-        end else begin
-            wave_out <= 8'd128;
+        if (!rst_n) wave_out <= 8'd128;
+        else if (ena) begin
+            wave_out <= phase[7] ? (8'd255 - ({1'b0, phase[6:0]} << 1)) : 
+                                  ({1'b0, phase[6:0]} << 1);
         end
     end
 endmodule
@@ -663,14 +650,8 @@ module sawtooth_wave_generator (
 );
 
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            wave_out <= 8'd128;
-        end else if (ena) begin
-            wave_out <= phase;
-            // $display REMOVED FOR SYNTHESIS
-        end else begin
-            wave_out <= 8'd128;
-        end
+        if (!rst_n) wave_out <= 8'd128;
+        else if (ena) wave_out <= phase;
     end
 endmodule
 
@@ -697,7 +678,7 @@ module adsr_generator (
     adsr_state_t state;
     reg [15:0] internal_amplitude;
 
-    // Scale factors for 16-bit range (fixed division warnings)
+    // Scale factors for 16-bit range
     wire [15:0] attack_step  = (attack != 0) ? (65535 / {8'b0, attack}) : 0;
     wire [15:0] decay_step   = (decay != 0)  ? (65535 / {8'b0, decay})  : 0;
     wire [15:0] release_step = (rel != 0)    ? (65535 / {8'b0, rel})    : 0;
@@ -765,22 +746,15 @@ module square_wave_generator (
     output reg  [7:0] wave_out    
 );  
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            wave_out <= 8'd0;
-        end else if (ena) begin
-            wave_out <= (phase > 8'd127) ? 8'd255 : 8'd0;
-            // $display REMOVED FOR SYNTHESIS
-        end
+        if (!rst_n) wave_out <= 8'd0;
+        else if (ena) wave_out <= (phase > 8'd127) ? 8'd255 : 8'd0;
     end
 endmodule
 
-
-
-
 module encoder #(
     parameter integer WIDTH = 8,              // Counter width
-    parameter integer INCREMENT = 1,          // Increment value (must be integer)
-    parameter integer MAX_VALUE = (1 << WIDTH)-1, // Max value (e.g., 255 for 8-bit)
+    parameter integer INCREMENT = 1,          // Increment value
+    parameter integer MAX_VALUE = (1 << WIDTH)-1, // Max value
     parameter integer MIN_VALUE = 0           // Min value
 )(
     input wire ena,       
@@ -807,12 +781,12 @@ module encoder #(
 
             case (transition)
                 4'b1000, 4'b0110, 4'b0011, 4'b1101: begin
-                    if (value < MAX_VALUE[WIDTH-1:0]) // Size MAX_VALUE to match value width
-                        value <= value + INCREMENT[WIDTH-1:0]; // Explicitly size INCREMENT
+                    if (value < MAX_VALUE[WIDTH-1:0])
+                        value <= value + INCREMENT[WIDTH-1:0];
                 end
                 4'b0001, 4'b1011, 4'b1110, 4'b0100: begin
-                    if (value > MIN_VALUE[WIDTH-1:0]) // Size MIN_VALUE to match value width
-                        value <= value - INCREMENT[WIDTH-1:0]; // Explicitly size INCREMENT
+                    if (value > MIN_VALUE[WIDTH-1:0])
+                        value <= value - INCREMENT[WIDTH-1:0];
                 end
                 default: value <= value; 
             endcase
