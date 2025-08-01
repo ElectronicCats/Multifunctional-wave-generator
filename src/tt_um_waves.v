@@ -1,4 +1,4 @@
-`define default_netname none
+`default_nettype none
 
 module tt_um_waves (
     input  wire [7:0] ui_in,    // Dedicated inputs
@@ -10,159 +10,69 @@ module tt_um_waves (
     input  wire       clk,      // Clock
     input  wire       rst_n     // Active-low reset
 );
-  
-  
+    // Synchronized reset (3-stage FF)
     reg [2:0] reset_sync_reg;
     wire rst_sync_n;
-    
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) reset_sync_reg <= 3'b0;
+        if (!rst_n) reset_sync_reg <= 0;
         else reset_sync_reg <= {reset_sync_reg[1:0], 1'b1};
     end
-    assign rst_sync_n = reset_sync_reg[2]; 
+    assign rst_sync_n = reset_sync_reg[2];
   
-  
-    // UART Signals
+    // UART Interface Signals
     wire [5:0] freq_select;
     wire [2:0] wave_select;
     reg        white_noise_en;
     
-    // ADSR  Control
-  wire [15:0]  adsr_amplitude;
+    // ADSR Control
+    wire [15:0] adsr_amplitude;
     reg [7:0] attack, decay, sustain, rel; 
   
-    wire unused_ui_in = |ui_in[7:1]; 
-  //  wire unused_temp_wave = |temp_wave[7:0];
-
-    // Frequency Divider
+    // Frequency Control
     reg [20:0] freq_divider;
     reg [20:0] clk_div;
-    reg wave_clk;
     reg [5:0] prev_freq_select;
     wire [20:0] uart_freq_divider;
-
   
-    // Phase accumulator for all waveforms
-    reg [7:0] phase_accum;
-    reg [23:0] phase_accum_full;  // Combined fractional and integer parts
-  
-  
-    // Pipeline registers to break critical path
-    reg [7:0] phase_accum_reg;
-    reg [7:0] selected_wave_reg;
-    reg [15:0] adsr_amplitude_reg;
-    reg        adsr_bypass_reg;
-  
-    wire [23:0] increment = {17'd0, freq_select, 1'b0};
+    // Phase Accumulator (16-bit for timing)
+    reg [15:0] phase_accum;
+    wire [15:0] increment = {9'd0, freq_select, 1'b0}; // 16-bit corrected
     
-   always @(posedge clk or negedge rst_sync_n) begin
-        if (!rst_sync_n) begin
-            phase_accum_full <= 24'd0;
-        end else if (ena && freq_select != 6'b000000) begin
-            phase_accum_full <= phase_accum_full + increment + 24'd1;
-        end
+    always @(posedge clk or negedge rst_sync_n) begin
+        if (!rst_sync_n) phase_accum <= 0;
+        else if (ena && freq_select != 0) 
+            phase_accum <= phase_accum + increment;
     end
+
+    // Waveform Generators
+    wire [7:0] tri_wave_out, saw_wave_out, sqr_wave_out, sine_wave_out, noise_out;
     
-    // Extract integer phase (top 8 bits of fractional part)
-    assign phase_accum = phase_accum_full[23:16];
-
-
-    // Clock Divider for waveform clocking
-    always @(posedge clk or negedge rst_sync_n) begin
-        if (!rst_sync_n) begin
-            clk_div <= 0;
-            wave_clk <= 0;
-        end else if (clk_div >= (freq_divider >> 1) && freq_divider > 0) begin
-            clk_div <= 0;
-            wave_clk <= ~wave_clk;
-        end else begin
-            clk_div <= clk_div + 1;
-        end
-    end
-  
-    // Frequency Divider Assignment
-    always @(posedge clk or negedge rst_sync_n) begin
-        if (!rst_sync_n) begin
-            prev_freq_select <= 6'b000001;
-            freq_divider <= 21'd1915712;
-        end else if (freq_select != prev_freq_select || prev_freq_select == 6'b000000) begin
-            prev_freq_select <= freq_select;
-            freq_divider <= uart_freq_divider;
-        end
-    end
-  
-  always @(posedge clk or negedge rst_sync_n) begin
-    if (!rst_sync_n) begin
-        phase_accum_reg    <= 8'd0;
-        selected_wave_reg  <= 8'd0;
-        adsr_amplitude_reg <= 16'd0;
-        adsr_bypass_reg    <= 1'b0;
-    end else begin
-        // Capture signals at current cycle
-        phase_accum_reg    <= phase_accum;
-        selected_wave_reg  <= selected_wave;
-        adsr_amplitude_reg <= adsr_amplitude;
-        
-        // Precompute bypass condition
-        adsr_bypass_reg    <= ((attack == 0) && 
-                               (decay == 0) && 
-                               (sustain == 0) && 
-                               (rel == 0));
-    end
-end
-
-
-    // UART Receiver with critical path fix
-    uart_receiver uart_rx_inst (
-        .clk(clk),
-        .rst_n(rst_sync_n),  // Fixed reset
-        .rx(ui_in[0]),
-        .freq_select(freq_select),
-        .wave_select(wave_select),
-        .white_noise_en(white_noise_en),
-        .freq_divider(uart_freq_divider)
-    );
-  
-
-    // Encoders for ADSR
-    encoder attack_encoder (.clk(clk), .rst_n(rst_sync_n), .a(uio_in[0]), .b(uio_in[1]), .value(attack), .ena(ena));
-    encoder decay_encoder (.clk(clk), .rst_n(rst_sync_n), .a(uio_in[2]), .b(uio_in[3]), .value(decay), .ena(ena));
-    encoder sustain_encoder (.clk(clk), .rst_n(rst_sync_n), .a(uio_in[4]), .b(uio_in[5]), .value(sustain), .ena(ena));
-    encoder release_encoder (.clk(clk), .rst_n(rst_sync_n), .a(uio_in[6]), .b(uio_in[7]), .value(rel), .ena(ena));
-
-    // Wave generators 
-    wire [7:0] tri_wave_out, saw_wave_out, sqr_wave_out, sine_wave_out;
-    wire [7:0] noise_out;
-
-    square_wave_generator sqr_gen (.clk(clk), .rst_n(rst_sync_n), .ena(ena), .phase(phase_accum), .wave_out(sqr_wave_out));
-    triangular_wave_generator tri_gen (.clk(clk), .rst_n(rst_sync_n), .ena(ena), .phase(phase_accum), .wave_out(tri_wave_out));
-    sawtooth_wave_generator saw_gen (.clk(clk), .rst_n(rst_sync_n), .ena(ena), .phase(phase_accum), .wave_out(saw_wave_out));
-    white_noise_generator noise_gen (.clk(clk), .rst_n(rst_sync_n), .noise_out(noise_out), .ena(white_noise_en & ena));
-    cordic_sine_generator sine_gen (.clk(clk), .rst_n(rst_sync_n), .ena(ena), .phase(phase_accum), .sine_out(sine_wave_out));
+    square_wave_generator sqr_gen (.clk(clk), .rst_n(rst_sync_n), .ena(ena), 
+                                  .phase(phase_accum[15:8]), .wave_out(sqr_wave_out));
+    triangular_wave_generator tri_gen (.clk(clk), .rst_n(rst_sync_n), .ena(ena), 
+                                     .phase(phase_accum[15:8]), .wave_out(tri_wave_out));
+    sawtooth_wave_generator saw_gen (.clk(clk), .rst_n(rst_sync_n), .ena(ena), 
+                                    .phase(phase_accum[15:8]), .wave_out(saw_wave_out));
+    white_noise_generator noise_gen (.clk(clk), .rst_n(rst_sync_n), 
+                                   .noise_out(noise_out), .ena(white_noise_en & ena));
+    cordic_sine_generator sine_gen (.clk(clk), .rst_n(rst_sync_n), .ena(ena), 
+                                  .phase(phase_accum[15:8]), .sine_out(sine_wave_out));
     
-    // Optimize multiplication path
-    reg [23:0] mult_result;
-    always @(posedge clk or negedge rst_sync_n) begin
-        if (!rst_sync_n) mult_result <= 24'd0;
-        else mult_result <= selected_wave_reg * adsr_amplitude_reg;
-    end
-  
-    // Select waveform output
+    // Wave Selection
     reg [7:0] selected_wave;
     always @(posedge clk or negedge rst_sync_n) begin
-        if (!rst_sync_n) selected_wave <= 8'd128;
+        if (!rst_sync_n) selected_wave <= 128;
         else case (wave_select)
             3'b000: selected_wave <= tri_wave_out;
             3'b001: selected_wave <= saw_wave_out;
             3'b010: selected_wave <= sqr_wave_out;
             3'b011: selected_wave <= sine_wave_out;
             3'b100: selected_wave <= noise_out;
-            default: selected_wave <= 8'd128;
+            default: selected_wave <= 128;
         endcase
     end
 
-
-    // ADSR generator
+    // ADSR Generator
     adsr_generator adsr_gen (
         .clk(clk), 
         .rst_n(rst_sync_n),
@@ -174,36 +84,27 @@ end
         .ena(ena)
     );
 
-
-    // Apply ADSR Envelope to waveform output
+    // ADSR Application (Optimized multiplier)
     reg [7:0] scaled_wave;
-    wire [23:0] product = selected_wave_reg * adsr_amplitude_reg;
+    reg [15:0] adsr_scaled;
+    
+    always @(posedge clk) begin
+        adsr_scaled <= selected_wave * adsr_amplitude[15:8];
+    end
     
     always @(posedge clk or negedge rst_sync_n) begin
-        if (!rst_sync_n) scaled_wave <= 8'd0;
-        else if (adsr_bypass_reg) scaled_wave <= selected_wave_reg;
-        else scaled_wave <= product[23:16];
+        if (!rst_sync_n) scaled_wave <= 0;
+        else if ((attack == 0) && (decay == 0) && (sustain == 0) && (rel == 0))
+            scaled_wave <= selected_wave;
+        else 
+            scaled_wave <= adsr_scaled[15:8];
     end
-  
+
+    // I2S Output
     wire i2s_sck, i2s_ws, i2s_sd;
-  
-  // Pipeline the multiplier to break critical path
-reg [15:0] mult_stage1;
-always @(posedge clk) begin
-    mult_stage1 <= selected_wave * adsr_amplitude[15:8];
-end
-
-always @(posedge clk) begin
-    scaled_wave <= adsr_bypass ? selected_wave : mult_stage1[15:8];
-end
-
-// Simplify phase increment
-wire [15:0] increment = {10'd0, freq_select, 2'b00};  // Reduced from 24 bits
-   
-    // I2S transmitter with synchronized reset
     i2s_transmitter i2s_out (
         .clk(clk),
-        .rst_n(rst_sync_n),  // Fixed: synchronized reset
+        .rst_n(rst_sync_n),
         .data(scaled_wave), 
         .sck(i2s_sck),
         .ws(i2s_ws),
@@ -211,15 +112,41 @@ wire [15:0] increment = {10'd0, freq_select, 2'b00};  // Reduced from 24 bits
         .ena(ena)
     );
 
-
-    // I2S Output
+    // Assign outputs
     assign uo_out[0] = i2s_sck;
     assign uo_out[1] = i2s_ws;
     assign uo_out[2] = i2s_sd;
-    assign uo_out[7:3] = 5'b00000;
-    assign uio_out = 8'b0;     
-    assign uio_oe = 8'b0;      
+    assign uo_out[7:3] = 0;
+    assign uio_out = 0;     
+    assign uio_oe = 0;
 
+    // UART Receiver
+    uart_receiver uart_rx_inst (
+        .clk(clk),
+        .rst_n(rst_sync_n),
+        .rx(ui_in[0]),
+        .freq_select(freq_select),
+        .wave_select(wave_select),
+        .white_noise_en(white_noise_en),
+        .freq_divider(uart_freq_divider)
+    );
+  
+    // Encoders for ADSR
+    encoder attack_encoder (.clk(clk), .rst_n(rst_sync_n), .a(uio_in[0]), .b(uio_in[1]), .value(attack), .ena(ena));
+    encoder decay_encoder (.clk(clk), .rst_n(rst_sync_n), .a(uio_in[2]), .b(uio_in[3]), .value(decay), .ena(ena));
+    encoder sustain_encoder (.clk(clk), .rst_n(rst_sync_n), .a(uio_in[4]), .b(uio_in[5]), .value(sustain), .ena(ena));
+    encoder release_encoder (.clk(clk), .rst_n(rst_sync_n), .a(uio_in[6]), .b(uio_in[7]), .value(rel), .ena(ena));
+
+    // Frequency Divider Update
+    always @(posedge clk or negedge rst_sync_n) begin
+        if (!rst_sync_n) begin
+            prev_freq_select <= 1;
+            freq_divider <= 1915712;
+        end else if (freq_select != prev_freq_select) begin
+            prev_freq_select <= freq_select;
+            freq_divider <= uart_freq_divider;
+        end
+    end
 endmodule
 
 
@@ -460,19 +387,20 @@ endmodule
 
 
 module i2s_transmitter (
-    input  wire clk,        
-    input  wire rst_n,      
-    input  wire ena,        
+    input  wire       clk,        
+    input  wire       rst_n,      
+    input  wire       ena,        
     input  wire [7:0] data, 
-    output reg sck = 0,   
-    output reg ws = 0,    
-    output reg sd = 0     
+    output reg        sck = 0,   
+    output reg        ws = 0,    
+    output reg        sd = 0     
 );
 
     reg [3:0] bit_counter;
     reg [15:0] shift_reg;
     reg [3:0] clk_div;
-
+    
+    // Explicit reset handling
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             clk_div <= 0;
@@ -480,33 +408,27 @@ module i2s_transmitter (
             ws <= 0;
             sd <= 0;
             bit_counter <= 0;
-            shift_reg <= 16'd0;
+            shift_reg <= 0;
         end else if (ena) begin
             clk_div <= clk_div + 1;
             
+            // Generate 3.125MHz SCK (25MHz / 8)
             if (clk_div == 3) begin
                 clk_div <= 0;
                 sck <= ~sck;
                 
-                if (sck) begin
+                if (sck) begin  // On falling edge
                     if (bit_counter == 0) begin
-                        shift_reg <= {data, 8'd0};  // 8-bit to 16-bit frame
-                        ws <= ~ws;
+                        shift_reg <= {data, 8'd0};  // 16-bit frame
+                        ws <= ~ws;  // Toggle word select
                     end else begin
                         shift_reg <= shift_reg << 1;
                     end
+                    
                     sd <= shift_reg[15];
                     bit_counter <= (bit_counter == 15) ? 0 : bit_counter + 1;
                 end
             end
-        end else begin
-            // Reset internal state when not enabled
-            clk_div <= 0;
-            sck <= 0;
-            ws <= 0;
-            sd <= 0;
-            bit_counter <= 0;
-            shift_reg <= 16'd0;
         end
     end
 endmodule
@@ -618,7 +540,7 @@ module cordic_sine_generator (
         if (!rst_n) sine_out <= 8'd0;
         else if (ena) sine_out <= sine_table[phase];
     end
-endmodule                                            
+endmodule
 
 
 
@@ -656,81 +578,65 @@ module sawtooth_wave_generator (
 endmodule
 
 module adsr_generator (
-    input  wire        clk,         // Clock signal
-    input  wire        rst_n,       // Reset signal (active low)
-    input  wire [7:0]  attack,      // Attack rate
-    input  wire [7:0]  decay,       // Decay rate
-    input  wire [7:0]  sustain,     // Sustain level
-    input  wire [7:0]  rel,         // Release rate
-    output reg  [15:0] amplitude,   // 16-bit output amplitude
-    input  wire        ena          // Enable signal
+    input  wire        clk,
+    input  wire        rst_n,
+    input  wire [7:0]  attack,
+    input  wire [7:0]  decay,
+    input  wire [7:0]  sustain,
+    input  wire [7:0]  rel,
+    output reg  [15:0] amplitude,
+    input  wire        ena
 );
 
-    // State Encoding
-    typedef enum logic [2:0] {
-        STATE_IDLE    = 3'b000,
-        STATE_ATTACK  = 3'b001,
-        STATE_DECAY   = 3'b010,
-        STATE_SUSTAIN = 3'b011,
-        STATE_RELEASE = 3'b100
-    } adsr_state_t;
-
-    adsr_state_t state;
-    reg [15:0] internal_amplitude;
-
-    // Scale factors for 16-bit range
-    wire [15:0] attack_step  = (attack != 0) ? (65535 / {8'b0, attack}) : 0;
-    wire [15:0] decay_step   = (decay != 0)  ? (65535 / {8'b0, decay})  : 0;
-    wire [15:0] release_step = (rel != 0)    ? (65535 / {8'b0, rel})    : 0;
+    typedef enum {IDLE, ATTACK, DECAY, SUSTAIN, RELEASE} state_t;
+    state_t state;
+    
+    // Fixed-point scaling with proper bit widths
     wire [15:0] sustain_level = {sustain, 8'b0};
+    
+    // Zero-extend 8-bit values to 16-bit for division
+    wire [15:0] attack_step  = (attack != 0) ? (65535 / {8'b0, attack}) : 0;
+    wire [15:0] decay_step   = (decay != 0)  ? ((65535 - sustain_level) / {8'b0, decay}) : 0;
+    wire [15:0] release_step = (rel != 0)    ? (sustain_level / {8'b0, rel}) : 0;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            state <= STATE_IDLE;
-            internal_amplitude <= 16'd0;
-            amplitude <= 16'd0;
+            state <= IDLE;
+            amplitude <= 0;
         end else if (ena) begin
-            amplitude <= internal_amplitude;
-            
             case (state)
-                STATE_IDLE: begin
-                    internal_amplitude <= 16'd0;
-                    if (attack > 0) state <= STATE_ATTACK;
-                end
+                IDLE: if (attack > 0) state <= ATTACK;
                 
-                STATE_ATTACK: begin
-                    if (internal_amplitude < 16'd65535 - attack_step) begin
-                        internal_amplitude <= internal_amplitude + attack_step;
-                    end else begin
-                        internal_amplitude <= 16'd65535;
-                        state <= STATE_DECAY;
+                ATTACK: begin
+                    if (amplitude < 65535 - attack_step) 
+                        amplitude <= amplitude + attack_step;
+                    else begin
+                        amplitude <= 65535;
+                        state <= DECAY;
                     end
                 end
                 
-                STATE_DECAY: begin
-                    if (internal_amplitude > sustain_level + decay_step) begin
-                        internal_amplitude <= internal_amplitude - decay_step;
-                    end else begin
-                        internal_amplitude <= sustain_level;
-                        state <= STATE_SUSTAIN;
+                DECAY: begin
+                    if (amplitude > sustain_level + decay_step) 
+                        amplitude <= amplitude - decay_step;
+                    else begin
+                        amplitude <= sustain_level;
+                        state <= SUSTAIN;
                     end
                 end
                 
-                STATE_SUSTAIN: begin
-                    internal_amplitude <= sustain_level;
-                    if (rel > 0) state <= STATE_RELEASE;
-                end
+                SUSTAIN: if (rel > 0) state <= RELEASE;
                 
-                STATE_RELEASE: begin
-                    if (internal_amplitude > release_step) begin
-                        internal_amplitude <= internal_amplitude - release_step;
-                    end else begin
-                        internal_amplitude <= 16'd0;
-                        state <= STATE_IDLE;
+                RELEASE: begin
+                    if (amplitude > release_step) 
+                        amplitude <= amplitude - release_step;
+                    else begin
+                        amplitude <= 0;
+                        state <= IDLE;
                     end
                 end
                 
-                default: state <= STATE_IDLE;
+                default: state <= IDLE;
             endcase
         end
     end
