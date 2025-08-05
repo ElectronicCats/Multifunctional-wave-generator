@@ -10,9 +10,8 @@ module tt_um_waves (
     input  wire       clk,      // Clock
     input  wire       rst_n     // Active-low reset
 );
-    // Global clock buffer
-    wire clk_buf;
-    sky130_fd_sc_hd__clkbuf_16 clk_buf_inst (.A(clk), .X(clk_buf));
+  
+    wire clk_buf = clk;
     
     // Synchronized reset (3-stage FF)
     reg [2:0] reset_sync_reg;
@@ -156,11 +155,12 @@ module tt_um_waves (
         end
     end
 
-    // Verilator lint off
+    // Fixed Verilator lint directives
+    // verilator lint_off UNUSED
     wire [6:0] unused_ui_in = ui_in[7:1];
     wire [7:0] unused_adsr_low = adsr_amplitude[7:0];
     wire [7:0] unused_scaled_low = adsr_scaled[7:0];
-    // Verilator lint on
+    // verilator lint_on UNUSED
 
 endmodule
 
@@ -691,10 +691,9 @@ module encoder #(
 );
 
     reg old_a, old_b;
-
-    wire [3:0] transition;
-    assign transition = {a, old_a, b, old_b}; 
-
+    wire [3:0] transition = {a, old_a, b, old_b}; 
+    
+    // Use parameters directly in comparisons with proper width casting
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             old_a <= 1'b0;
@@ -706,11 +705,11 @@ module encoder #(
 
             case (transition)
                 4'b1000, 4'b0110, 4'b0011, 4'b1101: begin
-                    if (value < MAX_VALUE)
+                    if (value < MAX_VALUE[WIDTH-1:0])
                         value <= value + WIDTH'(INCREMENT);
                 end
                 4'b0001, 4'b1011, 4'b1110, 4'b0100: begin
-                    if (value > MIN_VALUE)
+                    if (value > MIN_VALUE[WIDTH-1:0])
                         value <= value - WIDTH'(INCREMENT);
                 end
                 default: value <= value; 
