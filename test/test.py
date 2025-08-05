@@ -4,33 +4,35 @@ from cocotb.triggers import Timer, RisingEdge, FallingEdge, ClockCycles
 import random
 import os
 
-# Set environment variable to resolve 'x' states
 os.environ["COCOTB_RESOLVE_X"] = "ZERO"
 
 # UART and I2S configuration
 BAUD_RATE = 115200
-CLK_FREQ = 25e6  # 25MHz
-BAUD_PERIOD_NS = round(1e9 / BAUD_RATE)  # Fixed: proper rounding
+CLK_FREQ = 25e6
+BAUD_PERIOD_NS = round(1e9 / BAUD_RATE)
 
 @cocotb.test()
 async def test_full_functionality(dut):
-    clock = Clock(dut.clk, 40, units="ns")  # 25MHz
+    clock = Clock(dut.clk, 40, units="ns")
     cocotb.start_soon(clock.start())
     
-    # Extended initialization sequence
+    # Extended initialization
     dut.rst_n.value = 0
     dut.ena.value = 0
-    dut.ui_in.value = 0xFF  # UART idle
-    await Timer(1000, units="ns")
-    await ClockCycles(dut.clk, 100)  # Extended reset sync
+    dut.ui_in.value = 0xFF
+    dut.uio_in.value = 0
     
-    # Release reset and enable
+    await Timer(2000, units="ns")
+    await ClockCycles(dut.clk, 100)
+    
     dut.rst_n.value = 1
-    await ClockCycles(dut.clk, 50)  # Post-reset stabilization
+    await ClockCycles(dut.clk, 50)
     dut.ena.value = 1
-    await ClockCycles(dut.clk, 500)  # Extended initialization
     
-    # Test sequence with pipeline flushes
+    # Wait for first I2S activity
+    await RisingEdge(dut.uo_out[0])
+    await ClockCycles(dut.clk, 500)
+    
     await basic_sanity_check(dut)
     await test_waveforms(dut)
     await test_frequency_range(dut)
@@ -65,12 +67,10 @@ async def test_waveforms(dut):
     
     for name, cmd in waveforms.items():
         await send_uart(dut, cmd)
-        await ClockCycles(dut.clk, 500)  # Pipeline flush
+        await ClockCycles(dut.clk, 500)
         
-        # Capture after pipeline delay
         samples = await capture_samples(dut, 50)
         
-        # Skip validation for noise (stochastic)
         if name != 'noise':
             assert verify_waveform(samples, name), f"{name} verification failed"
 
@@ -94,42 +94,45 @@ async def test_frequency_range(dut):
     freqs = {'low': 0x30, 'mid': 0x5B, 'high': 0x7A}
     periods = []
     
-    # Set waveform first
     await send_uart(dut, 0x54)  # Triangle
     await ClockCycles(dut.clk, 500)
     
     for name, cmd in freqs.items():
         await send_uart(dut, cmd)
-        await ClockCycles(dut.clk, 1000)  # Frequency settle
+        await ClockCycles(dut.clk, 1000)
         
         # Wait for WS edge
-        await RisingEdge(dut.uo_out[1])
+        while True:
+            await RisingEdge(dut.clk)
+            if dut.uo_out[1].value == 1:
+                break
         start_time = cocotb.utils.get_sim_time(units='ns')
-        await RisingEdge(dut.uo_out[1])
+        while True:
+            await RisingEdge(dut.clk)
+            if dut.uo_out[1].value == 0:
+                break
         end_time = cocotb.utils.get_sim_time(units='ns')
         periods.append(end_time - start_time)
     
-    # Verify frequency scaling
     assert periods[2] < periods[1] < periods[0], "Invalid frequency scaling"
 
 async def test_adsr_functionality(dut):
-    # Set frequency and waveform
     await send_uart(dut, 0x5B)  # A4
     await send_uart(dut, 0x54)  # Triangle
     await ClockCycles(dut.clk, 1000)
     
-    # Reset ADSR parameters
-    await rotate_encoder(dut, 0, -10)  # Reset attack
-    await rotate_encoder(dut, 2, -10)  # Reset sustain
+    # Reset ADSR
+    await rotate_encoder(dut, 0, -10)
+    await rotate_encoder(dut, 2, -10)
     await ClockCycles(dut.clk, 1000)
     
     ref_samples = await capture_samples(dut, 100)
     ref_peak = max(ref_samples)
     
-    # Apply ADSR settings
-    await rotate_encoder(dut, 0, 5)  # Attack up
-    await rotate_encoder(dut, 2, -3)  # Sustain down
-    await ClockCycles(dut.clk, 2000)  # ADSR settle + pipeline
+    # Apply ADSR
+    await rotate_encoder(dut, 0, 5)
+    await rotate_encoder(dut, 2, -3)
+    await ClockCycles(dut.clk, 2000)
     
     env_samples = await capture_samples(dut, 100)
     env_peak = max(env_samples)
@@ -145,7 +148,7 @@ async def send_uart(dut, data):
         await Timer(BAUD_PERIOD_NS, units="ns")
     
     dut.ui_in[0].value = 1  # Stop bit
-    await Timer(BAUD_PERIOD_NS * 2, units="ns")  # Extended stop
+    await Timer(BAUD_PERIOD_NS * 2, units="ns")
     await ClockCycles(dut.clk, 10)
 
 async def rotate_encoder(dut, encoder_id, steps):
@@ -162,15 +165,24 @@ async def rotate_encoder(dut, encoder_id, steps):
 async def capture_samples(dut, count):
     samples = []
     for _ in range(count):
-        await RisingEdge(dut.uo_out[1])  # WS edge
-        await RisingEdge(dut.uo_out[0])  # SCK edge
+        # Wait for WS falling edge
+        while True:
+            await RisingEdge(dut.clk)
+            if dut.uo_out[1].value == 1:
+                break
+        while True:
+            await RisingEdge(dut.clk)
+            if dut.uo_out[1].value == 0:
+                break
+        
+        # Capture 8 bits
         sample = 0
-        
-        # MSB-first capture (I2S format)
         for i in range(8):
-            await RisingEdge(dut.uo_out[0])
-            sample = (sample << 1) | dut.uo_out[2].value.integer
-        
+            # Wait for SCK rising edge
+            while True:
+                await RisingEdge(dut.clk)
+                if dut.uo_out[0].value == 1:
+                    break
+            sample = (sample << 1) | (dut.uo_out[2].value & 1)
         samples.append(sample)
-        await ClockCycles(dut.clk, 10)
     return samples

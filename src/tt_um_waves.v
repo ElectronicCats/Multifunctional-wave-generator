@@ -10,10 +10,14 @@ module tt_um_waves (
     input  wire       clk,      // Clock
     input  wire       rst_n     // Active-low reset
 );
+    // Global clock buffer
+    wire clk_buf;
+    sky130_fd_sc_hd__clkbuf_16 clk_buf_inst (.A(clk), .X(clk_buf));
+    
     // Synchronized reset (3-stage FF)
     reg [2:0] reset_sync_reg;
     wire rst_sync_n;
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk_buf or negedge rst_n) begin
         if (!rst_n) reset_sync_reg <= 0;
         else reset_sync_reg <= {reset_sync_reg[1:0], 1'b1};
     end
@@ -30,37 +34,41 @@ module tt_um_waves (
   
     // Frequency Control
     reg [20:0] freq_divider;
-    reg [20:0] clk_div;
     reg [5:0] prev_freq_select;
     wire [20:0] uart_freq_divider;
   
-    // Phase Accumulator (16-bit for timing)
+    // Phase Accumulator with 2-stage pipeline
     reg [15:0] phase_accum;
-    wire [15:0] increment = {9'd0, freq_select, 1'b0}; // 16-bit corrected
+    reg [15:0] phase_accum_reg;
+    wire [15:0] increment = {9'd0, freq_select, 1'b0}; // 16-bit
     
-    always @(posedge clk or negedge rst_sync_n) begin
-        if (!rst_sync_n) phase_accum <= 0;
-        else if (ena && freq_select != 0) 
-            phase_accum <= phase_accum + increment;
+    always @(posedge clk_buf or negedge rst_sync_n) begin
+        if (!rst_sync_n) begin
+            phase_accum <= 0;
+            phase_accum_reg <= 0;
+        end else if (ena && freq_select != 0) begin
+            phase_accum_reg <= phase_accum_reg + increment;
+            phase_accum <= phase_accum_reg;
+        end
     end
 
     // Waveform Generators
     wire [7:0] tri_wave_out, saw_wave_out, sqr_wave_out, sine_wave_out, noise_out;
     
-    square_wave_generator sqr_gen (.clk(clk), .rst_n(rst_sync_n), .ena(ena), 
+    square_wave_generator sqr_gen (.clk(clk_buf), .rst_n(rst_sync_n), .ena(ena), 
                                   .phase(phase_accum[15:8]), .wave_out(sqr_wave_out));
-    triangular_wave_generator tri_gen (.clk(clk), .rst_n(rst_sync_n), .ena(ena), 
+    triangular_wave_generator tri_gen (.clk(clk_buf), .rst_n(rst_sync_n), .ena(ena), 
                                      .phase(phase_accum[15:8]), .wave_out(tri_wave_out));
-    sawtooth_wave_generator saw_gen (.clk(clk), .rst_n(rst_sync_n), .ena(ena), 
+    sawtooth_wave_generator saw_gen (.clk(clk_buf), .rst_n(rst_sync_n), .ena(ena), 
                                     .phase(phase_accum[15:8]), .wave_out(saw_wave_out));
-    white_noise_generator noise_gen (.clk(clk), .rst_n(rst_sync_n), 
+    white_noise_generator noise_gen (.clk(clk_buf), .rst_n(rst_sync_n), 
                                    .noise_out(noise_out), .ena(white_noise_en & ena));
-    cordic_sine_generator sine_gen (.clk(clk), .rst_n(rst_sync_n), .ena(ena), 
+    cordic_sine_generator sine_gen (.clk(clk_buf), .rst_n(rst_sync_n), .ena(ena), 
                                   .phase(phase_accum[15:8]), .sine_out(sine_wave_out));
     
     // Wave Selection
     reg [7:0] selected_wave;
-    always @(posedge clk or negedge rst_sync_n) begin
+    always @(posedge clk_buf or negedge rst_sync_n) begin
         if (!rst_sync_n) selected_wave <= 128;
         else case (wave_select)
             3'b000: selected_wave <= tri_wave_out;
@@ -74,7 +82,7 @@ module tt_um_waves (
 
     // ADSR Generator
     adsr_generator adsr_gen (
-        .clk(clk), 
+        .clk(clk_buf), 
         .rst_n(rst_sync_n),
         .attack(attack), 
         .decay(decay),
@@ -84,15 +92,15 @@ module tt_um_waves (
         .ena(ena)
     );
 
-    // ADSR Application (Optimized multiplier)
+    // ADSR Application with pipeline
     reg [7:0] scaled_wave;
     reg [15:0] adsr_scaled;
     
-    always @(posedge clk) begin
+    always @(posedge clk_buf) begin
         adsr_scaled <= selected_wave * adsr_amplitude[15:8];
     end
     
-    always @(posedge clk or negedge rst_sync_n) begin
+    always @(posedge clk_buf or negedge rst_sync_n) begin
         if (!rst_sync_n) scaled_wave <= 0;
         else if ((attack == 0) && (decay == 0) && (sustain == 0) && (rel == 0))
             scaled_wave <= selected_wave;
@@ -103,7 +111,7 @@ module tt_um_waves (
     // I2S Output
     wire i2s_sck, i2s_ws, i2s_sd;
     i2s_transmitter i2s_out (
-        .clk(clk),
+        .clk(clk_buf),
         .rst_n(rst_sync_n),
         .data(scaled_wave), 
         .sck(i2s_sck),
@@ -122,7 +130,7 @@ module tt_um_waves (
 
     // UART Receiver
     uart_receiver uart_rx_inst (
-        .clk(clk),
+        .clk(clk_buf),
         .rst_n(rst_sync_n),
         .rx(ui_in[0]),
         .freq_select(freq_select),
@@ -132,13 +140,13 @@ module tt_um_waves (
     );
   
     // Encoders for ADSR
-    encoder attack_encoder (.clk(clk), .rst_n(rst_sync_n), .a(uio_in[0]), .b(uio_in[1]), .value(attack), .ena(ena));
-    encoder decay_encoder (.clk(clk), .rst_n(rst_sync_n), .a(uio_in[2]), .b(uio_in[3]), .value(decay), .ena(ena));
-    encoder sustain_encoder (.clk(clk), .rst_n(rst_sync_n), .a(uio_in[4]), .b(uio_in[5]), .value(sustain), .ena(ena));
-    encoder release_encoder (.clk(clk), .rst_n(rst_sync_n), .a(uio_in[6]), .b(uio_in[7]), .value(rel), .ena(ena));
+    encoder attack_encoder (.clk(clk_buf), .rst_n(rst_sync_n), .a(uio_in[0]), .b(uio_in[1]), .value(attack), .ena(ena));
+    encoder decay_encoder (.clk(clk_buf), .rst_n(rst_sync_n), .a(uio_in[2]), .b(uio_in[3]), .value(decay), .ena(ena));
+    encoder sustain_encoder (.clk(clk_buf), .rst_n(rst_sync_n), .a(uio_in[4]), .b(uio_in[5]), .value(sustain), .ena(ena));
+    encoder release_encoder (.clk(clk_buf), .rst_n(rst_sync_n), .a(uio_in[6]), .b(uio_in[7]), .value(rel), .ena(ena));
 
     // Frequency Divider Update
-    always @(posedge clk or negedge rst_sync_n) begin
+    always @(posedge clk_buf or negedge rst_sync_n) begin
         if (!rst_sync_n) begin
             prev_freq_select <= 1;
             freq_divider <= 1915712;
@@ -147,6 +155,13 @@ module tt_um_waves (
             freq_divider <= uart_freq_divider;
         end
     end
+
+    // Verilator lint off
+    wire [6:0] unused_ui_in = ui_in[7:1];
+    wire [7:0] unused_adsr_low = adsr_amplitude[7:0];
+    wire [7:0] unused_scaled_low = adsr_scaled[7:0];
+    // Verilator lint on
+
 endmodule
 
 
@@ -594,10 +609,14 @@ module adsr_generator (
     // Fixed-point scaling with proper bit widths
     wire [15:0] sustain_level = {sustain, 8'b0};
     
-    // Zero-extend 8-bit values to 16-bit for division
-    wire [15:0] attack_step  = (attack != 0) ? (65535 / {8'b0, attack}) : 0;
-    wire [15:0] decay_step   = (decay != 0)  ? ((65535 - sustain_level) / {8'b0, decay}) : 0;
-    wire [15:0] release_step = (rel != 0)    ? (sustain_level / {8'b0, rel}) : 0;
+    // Pipelined step calculations
+    reg [15:0] attack_step, decay_step, release_step;
+    
+    always @(posedge clk) begin
+        attack_step  <= (attack != 0) ? (65535 / {8'b0, attack}) : 0;
+        decay_step   <= (decay != 0)  ? ((65535 - sustain_level) / {8'b0, decay}) : 0;
+        release_step <= (rel != 0)    ? (sustain_level / {8'b0, rel}) : 0;
+    end
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -687,12 +706,12 @@ module encoder #(
 
             case (transition)
                 4'b1000, 4'b0110, 4'b0011, 4'b1101: begin
-                    if (value < MAX_VALUE[WIDTH-1:0])
-                        value <= value + INCREMENT[WIDTH-1:0];
+                    if (value < MAX_VALUE)
+                        value <= value + WIDTH'(INCREMENT);
                 end
                 4'b0001, 4'b1011, 4'b1110, 4'b0100: begin
-                    if (value > MIN_VALUE[WIDTH-1:0])
-                        value <= value - INCREMENT[WIDTH-1:0];
+                    if (value > MIN_VALUE)
+                        value <= value - WIDTH'(INCREMENT);
                 end
                 default: value <= value; 
             endcase
