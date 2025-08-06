@@ -31,11 +31,6 @@ module tt_um_waves (
     wire [15:0] adsr_amplitude;
     reg [7:0] attack, decay, sustain, rel; 
   
-    // Frequency Control
-    reg [20:0] freq_divider;
-    reg [5:0] prev_freq_select;
-    wire [20:0] uart_freq_divider;
-  
     // Phase Accumulator with 2-stage pipeline
     reg [15:0] phase_accum;
     reg [15:0] phase_accum_reg;
@@ -134,8 +129,7 @@ module tt_um_waves (
         .rx(ui_in[0]),
         .freq_select(freq_select),
         .wave_select(wave_select),
-        .white_noise_en(white_noise_en),
-        .freq_divider(uart_freq_divider)
+        .white_noise_en(white_noise_en)
     );
   
     // Encoders for ADSR
@@ -144,22 +138,12 @@ module tt_um_waves (
     encoder sustain_encoder (.clk(clk_buf), .rst_n(rst_sync_n), .a(uio_in[4]), .b(uio_in[5]), .value(sustain), .ena(ena));
     encoder release_encoder (.clk(clk_buf), .rst_n(rst_sync_n), .a(uio_in[6]), .b(uio_in[7]), .value(rel), .ena(ena));
 
-    // Frequency Divider Update
-    always @(posedge clk_buf or negedge rst_sync_n) begin
-        if (!rst_sync_n) begin
-            prev_freq_select <= 1;
-            freq_divider <= 1915712;
-        end else if (freq_select != prev_freq_select) begin
-            prev_freq_select <= freq_select;
-            freq_divider <= uart_freq_divider;
-        end
-    end
-
     // Fixed Verilator lint directives
     // verilator lint_off UNUSED
     wire [6:0] unused_ui_in = ui_in[7:1];
     wire [7:0] unused_adsr_low = adsr_amplitude[7:0];
     wire [7:0] unused_scaled_low = adsr_scaled[7:0];
+    wire [7:0] unused_phase_accum_low = phase_accum[7:0];
     // verilator lint_on UNUSED
 
 endmodule
@@ -171,8 +155,7 @@ module uart_receiver (
     input wire rx,                 // UART RX Input
     output reg [5:0] freq_select,  // Frequency selection (0-63)
     output reg [2:0] wave_select,  // Waveform selection
-    output reg white_noise_en,     // White noise enable
-    output reg [20:0] freq_divider // Frequency divider output
+    output reg white_noise_en      // White noise enable
 );
 
     // UART Parameters for 25MHz clock, 115200 baud
@@ -223,7 +206,6 @@ module uart_receiver (
             freq_select <= 6'd9;      // Default to A2
             wave_select <= 3'd0;
             white_noise_en <= 1'b0;
-            freq_divider <= 21'd1136364;  // A2 frequency
             temp_freq <= 6'd9;
         end else begin
             case (state)
@@ -295,80 +277,6 @@ module uart_receiver (
                     
                     // Update frequency selection
                     freq_select <= temp_freq;
-                    
-                    // Update frequency divider based on new frequency
-                    case (temp_freq)
-                        6'b000000: freq_divider <= 21'd1915712;  // C2 (65.41 Hz)
-                        6'b000001: freq_divider <= 21'd1803586;  // C#2/Db2 (69.30 Hz)
-                        6'b000010: freq_divider <= 21'd1702624;  // D2 (73.42 Hz)
-                        6'b000011: freq_divider <= 21'd1607142;  // D#2/Eb2 (77.78 Hz)
-                        6'b000100: freq_divider <= 21'd1515152;  // E2 (82.41 Hz)
-                        6'b000101: freq_divider <= 21'd1431731;  // F2 (87.31 Hz)
-                        6'b000110: freq_divider <= 21'd1351351;  // F#2/Gb2 (92.50 Hz)
-                        6'b000111: freq_divider <= 21'd1275510;  // G2 (98.00 Hz)
-                        6'b001000: freq_divider <= 21'd1204819;  // G#2/Ab2 (103.83 Hz)
-                        6'b001001: freq_divider <= 21'd1136364;  // A2 (110.00 Hz)
-                        6'b001010: freq_divider <= 21'd1075268;  // A#2/Bb2 (116.54 Hz)
-                        6'b001011: freq_divider <= 21'd1017340;  // B2 (123.47 Hz)
-
-                        // Octave 3
-                        6'b001100: freq_divider <= 21'd95786;    // C3 (130.81 Hz)
-                        6'b001101: freq_divider <= 21'd90180;    // C#3/Db3 (138.59 Hz)
-                        6'b001110: freq_divider <= 21'd85131;    // D3 (146.83 Hz)
-                        6'b001111: freq_divider <= 21'd80357;    // D#3/Eb3 (155.56 Hz)
-                        6'b010000: freq_divider <= 21'd75758;    // E3 (164.81 Hz)
-                        6'b010001: freq_divider <= 21'd71586;    // F3 (174.61 Hz)
-                        6'b010010: freq_divider <= 21'd67567;    // F#3/Gb3 (185.00 Hz)
-                        6'b010011: freq_divider <= 21'd63775;    // G3 (196.00 Hz)
-                        6'b010100: freq_divider <= 21'd60241;    // G#3/Ab3 (207.65 Hz)
-                        6'b010101: freq_divider <= 21'd56818;    // A3 (220.00 Hz)
-                        6'b010110: freq_divider <= 21'd53763;    // A#3/Bb3 (233.08 Hz)
-                        6'b010111: freq_divider <= 21'd50867;    // B3 (246.94 Hz)
-
-                        // Octave 4
-                        6'b011000: freq_divider <= 21'd47878;    // C4 (261.63 Hz)
-                        6'b011001: freq_divider <= 21'd45090;    // C#4/Db4 (277.18 Hz)
-                        6'b011010: freq_divider <= 21'd42566;    // D4 (293.66 Hz)
-                        6'b011011: freq_divider <= 21'd40178;    // D#4/Eb4 (311.13 Hz)
-                        6'b011100: freq_divider <= 21'd37878;    // E4 (329.63 Hz)
-                        6'b011101: freq_divider <= 21'd35793;    // F4 (349.23 Hz)
-                        6'b011110: freq_divider <= 21'd33783;    // F#4/Gb4 (369.99 Hz)
-                        6'b011111: freq_divider <= 21'd31888;    // G4 (392.00 Hz)
-                        6'b100000: freq_divider <= 21'd30120;    // G#4/Ab4 (415.30 Hz)
-                        6'b100001: freq_divider <= 21'd28409;    // A4 (440.00 Hz)
-                        6'b100010: freq_divider <= 21'd26881;    // A#4/Bb4 (466.16 Hz)
-                        6'b100011: freq_divider <= 21'd25434;    // B4 (493.88 Hz)
-
-                        // Octave 5
-                        6'b100100: freq_divider <= 21'd23939;    // C5 (523.25 Hz)
-                        6'b100101: freq_divider <= 21'd22545;    // C#5/Db5 (554.37 Hz)
-                        6'b100110: freq_divider <= 21'd21283;    // D5 (587.33 Hz)
-                        6'b100111: freq_divider <= 21'd20089;    // D#5/Eb5 (622.25 Hz)
-                        6'b101000: freq_divider <= 21'd18938;    // E5 (659.25 Hz)
-                        6'b101001: freq_divider <= 21'd17896;    // F5 (698.46 Hz)
-                        6'b101010: freq_divider <= 21'd16891;    // F#5/Gb5 (739.99 Hz)
-                        6'b101011: freq_divider <= 21'd15944;    // G5 (783.99 Hz)
-                        6'b101100: freq_divider <= 21'd15060;    // G#5/Ab5 (830.61 Hz)
-                        6'b101101: freq_divider <= 21'd14204;    // A5 (880.00 Hz)
-                        6'b101110: freq_divider <= 21'd13441;    // A#5/Bb5 (932.33 Hz)
-                        6'b101111: freq_divider <= 21'd12717;    // B5 (987.77 Hz)
-
-                        // Octave 6
-                        6'b110000: freq_divider <= 21'd11969;    // C6 (1046.50 Hz)
-                        6'b110001: freq_divider <= 21'd11272;    // C#6/Db6 (1108.73 Hz)
-                        6'b110010: freq_divider <= 21'd10642;    // D6 (1174.66 Hz)
-                        6'b110011: freq_divider <= 21'd10044;    // D#6/Eb6 (1244.51 Hz)
-                        6'b110100: freq_divider <= 21'd9470;     // E6 (1318.51 Hz)
-                        6'b110101: freq_divider <= 21'd8948;     // F6 (1396.91 Hz)
-                        6'b110110: freq_divider <= 21'd8445;     // F#6/Gb6 (1479.98 Hz)
-                        6'b110111: freq_divider <= 21'd7972;     // G6 (1567.98 Hz)
-                        6'b111000: freq_divider <= 21'd7518;     // G#6/Ab6 (1661.22 Hz)
-                        6'b111001: freq_divider <= 21'd7090;     // A6 (1760.00 Hz)
-                        6'b111010: freq_divider <= 21'd6719;     // A#6/Bb6 (1864.66 Hz)
-                        6'b111011: freq_divider <= 21'd6358;     // B6 (1975.53 Hz)
-                        default:   freq_divider <= 21'd1136364; // Default to A2
-                    endcase
-                    
                     state <= IDLE;
                 end
                 
@@ -411,11 +319,11 @@ module i2s_transmitter (
     output reg        sd = 0     
 );
 
-    reg [3:0] bit_counter;
+    // Change to 5-bit counter (0-31)
+    reg [4:0] bit_counter;
     reg [15:0] shift_reg;
     reg [3:0] clk_div;
     
-    // Explicit reset handling
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             clk_div <= 0;
@@ -428,25 +336,26 @@ module i2s_transmitter (
             clk_div <= clk_div + 1;
             
             // Generate 3.125MHz SCK (25MHz / 8)
-            if (clk_div == 3) begin
+            if (clk_div == 7) begin
                 clk_div <= 0;
                 sck <= ~sck;
                 
                 if (sck) begin  // On falling edge
-                    if (bit_counter == 0) begin
+                    sd <= shift_reg[15];  // Output before shift
+                    
+                    if (bit_counter == 5'd16) begin  // Explicit 5-bit constant
                         shift_reg <= {data, 8'd0};  // 16-bit frame
                         ws <= ~ws;  // Toggle word select
+                        bit_counter <= 0;
                     end else begin
                         shift_reg <= shift_reg << 1;
+                        bit_counter <= bit_counter + 1;
                     end
-                    
-                    sd <= shift_reg[15];
-                    bit_counter <= (bit_counter == 15) ? 0 : bit_counter + 1;
                 end
             end
         end
     end
-endmodule
+endmodule                       
 
 
 module cordic_sine_generator (
@@ -609,13 +518,14 @@ module adsr_generator (
     // Fixed-point scaling with proper bit widths
     wire [15:0] sustain_level = {sustain, 8'b0};
     
-    // Pipelined step calculations
+    // Step size registers
     reg [15:0] attack_step, decay_step, release_step;
     
+    // Step calculation
     always @(posedge clk) begin
-        attack_step  <= (attack != 0) ? (65535 / {8'b0, attack}) : 0;
-        decay_step   <= (decay != 0)  ? ((65535 - sustain_level) / {8'b0, decay}) : 0;
-        release_step <= (rel != 0)    ? (sustain_level / {8'b0, rel}) : 0;
+        attack_step  <= (attack != 0) ? (16'd65535 / {8'b0, attack}) : 16'd0;
+        decay_step   <= (decay != 0)  ? ((16'd65535 - sustain_level) / {8'b0, decay}) : 16'd0;
+        release_step <= (rel != 0)    ? (sustain_level / {8'b0, rel}) : 16'd0;
     end
 
     always @(posedge clk or negedge rst_n) begin
@@ -624,14 +534,15 @@ module adsr_generator (
             amplitude <= 0;
         end else if (ena) begin
             case (state)
-                IDLE: if (attack > 0) state <= ATTACK;
+                IDLE: 
+                    if (attack > 0) state <= ATTACK;
                 
                 ATTACK: begin
-                    if (amplitude < 65535 - attack_step) 
+                    if (amplitude < 16'd65535 - attack_step) 
                         amplitude <= amplitude + attack_step;
                     else begin
-                        amplitude <= 65535;
-                        state <= DECAY;
+                        amplitude <= 16'd65535;
+                        state <= (decay > 0) ? DECAY : SUSTAIN;
                     end
                 end
                 
@@ -644,7 +555,8 @@ module adsr_generator (
                     end
                 end
                 
-                SUSTAIN: if (rel > 0) state <= RELEASE;
+                SUSTAIN: 
+                    if (rel > 0) state <= RELEASE;
                 
                 RELEASE: begin
                     if (amplitude > release_step) 
@@ -677,42 +589,39 @@ module square_wave_generator (
 endmodule
 
 module encoder #(
-    parameter integer WIDTH = 8,              // Counter width
-    parameter integer INCREMENT = 1,          // Increment value
-    parameter integer MAX_VALUE = (1 << WIDTH)-1, // Max value
-    parameter integer MIN_VALUE = 0           // Min value
+    parameter integer WIDTH = 8
 )(
-    input wire ena,       
-    input wire clk,       
-    input wire rst_n,     
-    input wire a,         
-    input wire b,         
+    input  wire ena,       
+    input  wire clk,       
+    input  wire rst_n,     
+    input  wire a,         
+    input  wire b,         
     output reg [WIDTH-1:0] value  
 );
 
-    reg old_a, old_b;
-    wire [3:0] transition = {a, old_a, b, old_b}; 
-    
-    // Use parameters directly in comparisons with proper width casting
+    reg [1:0] ab_history;
+    wire [3:0] transition = {a, b, ab_history};
+
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            old_a <= 1'b0;
-            old_b <= 1'b0;
+            ab_history <= 2'b00;
             value <= {WIDTH{1'b0}};
         end else if (ena) begin
-            old_a <= a;
-            old_b <= b;
-
+            ab_history <= {a, b};
+            
             case (transition)
-                4'b1000, 4'b0110, 4'b0011, 4'b1101: begin
-                    if (value < MAX_VALUE[WIDTH-1:0])
-                        value <= value + WIDTH'(INCREMENT);
-                end
-                4'b0001, 4'b1011, 4'b1110, 4'b0100: begin
-                    if (value > MIN_VALUE[WIDTH-1:0])
-                        value <= value - WIDTH'(INCREMENT);
-                end
-                default: value <= value; 
+                // Clockwise patterns
+                4'b0001, 4'b0111, 4'b1011, 4'b1100: 
+                    if (value < (1 << WIDTH) - 1)
+                        value <= value + 1;
+                
+                // Counter-clockwise patterns
+                4'b0010, 4'b0100, 4'b1000, 4'b1110: 
+                    if (value > 0)
+                        value <= value - 1;
+                
+                // Add default case for all other states
+                default: value <= value;
             endcase
         end
     end
