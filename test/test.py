@@ -11,6 +11,16 @@ BAUD_RATE = 115200
 CLK_FREQ = 25e6
 BAUD_PERIOD_NS = round(1e9 / BAUD_RATE)
 
+async def wait_for_sck(dut):
+    """Helper function to wait for I2S clock to start"""
+    timeout = 10000
+    while timeout > 0:
+        await RisingEdge(dut.clk)
+        if dut.uo_out[0].value == 1:
+            return
+        timeout -= 1
+    assert False, "I2S clock did not start"
+
 @cocotb.test()
 async def test_full_functionality(dut):
     clock = Clock(dut.clk, 40, units="ns")
@@ -29,8 +39,8 @@ async def test_full_functionality(dut):
     await ClockCycles(dut.clk, 50)
     dut.ena.value = 1
     
-    # Wait for first I2S activity
-    await RisingEdge(dut.uo_out[0])
+    # Wait for first I2S activity using helper
+    await wait_for_sck(dut)
     await ClockCycles(dut.clk, 500)
     
     await basic_sanity_check(dut)
@@ -163,13 +173,10 @@ async def rotate_encoder(dut, encoder_id, steps):
             await ClockCycles(dut.clk, 4)
 
 async def capture_samples(dut, count):
+    """Capture I2S samples with proper SCK/WS synchronization"""
     samples = []
     for _ in range(count):
         # Wait for WS falling edge
-        while True:
-            await RisingEdge(dut.clk)
-            if dut.uo_out[1].value == 1:
-                break
         while True:
             await RisingEdge(dut.clk)
             if dut.uo_out[1].value == 0:

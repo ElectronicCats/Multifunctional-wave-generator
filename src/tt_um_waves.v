@@ -319,7 +319,7 @@ module i2s_transmitter (
     output reg        sd = 0     
 );
 
-    // Change to 5-bit counter (0-31)
+    // Changed to 5-bit counter (0-31)
     reg [4:0] bit_counter;
     reg [15:0] shift_reg;
     reg [3:0] clk_div;
@@ -341,7 +341,8 @@ module i2s_transmitter (
                 sck <= ~sck;
                 
                 if (sck) begin  // On falling edge
-                    sd <= shift_reg[15];  // Output before shift
+                    // Output current MSB before shift
+                    sd <= shift_reg[15];
                     
                     if (bit_counter == 5'd16) begin  // Explicit 5-bit constant
                         shift_reg <= {data, 8'd0};  // 16-bit frame

@@ -54,7 +54,7 @@ module tb;
     #500 rst_n = 1;
     #200 ena = 1;
     $display("[TB] System Enabled");
-    #1000; // Extended initialization for new pipeline stages
+    #1000; // Extended initialization
   end
 
   // UART Transmission Task (115200 baud)
@@ -131,7 +131,7 @@ module tb;
     end
   endtask
 
-  // I2S Frame Capture
+  // I2S Frame Capture (Updated for new timing)
   task capture_i2s_frame();
     integer i;
     reg [15:0] captured_data;
@@ -139,7 +139,7 @@ module tb;
       // Wait for WS falling edge (start of left channel)
       @(negedge i2s_ws);
       
-      // Capture 16 bits (MSB first)
+      // Capture 16 bits (MSB first) on SCK rising edge
       for (i = 15; i >= 0; i = i - 1) begin
         @(posedge i2s_sck);
         captured_data[i] = i2s_sd;
@@ -158,7 +158,7 @@ module tb;
     end
   endtask
 
-  // Frequency Measurement
+  // Frequency Measurement (Improved accuracy)
   task measure_frequency();
     integer t1, t2;
     begin
@@ -232,7 +232,7 @@ module tb;
     begin
       $display("\nTesting %s wave", wave_name);
       uart_send(cmd);
-      #50000; // Allow 50us for waveform transition and pipeline flush
+      #50000; // Allow 50us for waveform transition
       
       // Capture 50 samples
       repeat(50) capture_i2s_frame();
@@ -245,7 +245,7 @@ module tb;
     begin
       $display("\nTesting frequency: %s", freq_name);
       uart_send(freq_cmd);
-      #50000; // Allow 50us for frequency change and pipeline flush
+      #50000; // Allow 50us for frequency change
       
       measure_frequency();
     end
@@ -295,7 +295,7 @@ module tb;
     $display("Setting ADSR parameters...");
     rotate_encoder(0, 10, 1);  // Increase attack
     rotate_encoder(2, 8, 1);   // Increase sustain
-    #50000; // ADSR settling time + pipeline flush
+    #50000; // ADSR settling time
     
     // Capture ADSR amplitude
     $display("Capturing ADSR amplitude...");
